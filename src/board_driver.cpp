@@ -293,7 +293,14 @@ String getMoveInput(void) {
         }
       }
 
-      for (int row_index = 0; row_index < 8; row_index++) {
+      // Outer loop gated by !mvStarted so a single iteration of the
+      // wait-for-start poll appends exactly ONE square to mvInput.
+      // Previously the inner `break` only exited the col_index loop;
+      // the outer row_index loop kept iterating and could append
+      // multiple squares (e.g. after a re-sync where the user has
+      // adjusted several pieces), producing garbage UCI strings like
+      // 'e5d8c5b4a3...' that Lichess always rejected.
+      for (int row_index = 0; row_index < 8 && !mvStarted; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
 
           int state1 = bitRead(hallBoardStateInit[row_index], col_index);
@@ -405,7 +412,15 @@ String getMoveInput(void) {
         }
       }
 
-      for (int row_index = 0; row_index < 8; row_index++) {
+      // Same outer-loop gating as wait-for-start: append exactly ONE
+      // end square per iteration. Previously wait-for-end had no
+      // break at all, so a re-sync scenario where the user adjusted
+      // multiple pieces between the start and end of detection would
+      // append a square name for every changed cell — producing
+      // garbage UCI strings like 'e5d8c5b4a3...' that Lichess always
+      // rejected. We now record the FIRST settled change found and
+      // skip the rest until the next getMoveInput call.
+      for (int row_index = 0; row_index < 8 && !mvFinished; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
 
           // Three-sample debounce: a square is considered settled
@@ -429,6 +444,7 @@ String getMoveInput(void) {
               #else
               mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
               #endif
+              break; // exit the col loop; outer guard handles row loop
             }
           }
         }
