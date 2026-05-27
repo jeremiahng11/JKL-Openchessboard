@@ -86,6 +86,19 @@ void run_WiFi_app(void){
         is_game_running = false;
         currentGameID = "noGame";
         delay(800); // let the server process the resignation
+
+        // Board is already in start position — that gesture WAS the
+        // new-game trigger. Post the new game directly instead of
+        // re-polling getGameID and waiting for another trigger
+        // detection (which would produce two redundant "no Game found"
+        // log lines and an unnecessary 5s wait window).
+        DEBUG_SERIAL.println("\nStart Game with prefered settings: " + board_gameMode);
+        postNewGame(PostClient, board_gameMode);
+        ever_left_start_pos = false;
+        restart_requested = false;
+        kings_off_since_ms = 0;
+        start_pos_since_ms = 0;
+        wePostedNewGame = true;
         continue;
       }
 
