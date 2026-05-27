@@ -89,7 +89,12 @@ bool handleAPClientRequest(WiFiClient &client) {
   while (client.connected()) {
     if (client.available()) {
       char c = client.read();
-      Serial.write(c);  // Optional, to debug the received request
+      // The HTTP request body for /submit includes the form fields
+      // password=... and token=... in plaintext URL-encoded form.
+      // Echoing every byte to serial leaked the credentials on every
+      // settings submission. Removed; re-enable locally for protocol
+      // debugging if needed.
+      // Serial.write(c);
 
       // Read the HTTP request line
       if (c == '\n') {
@@ -100,10 +105,9 @@ bool handleAPClientRequest(WiFiClient &client) {
           client.println("Content-Type: text/html");
           client.println("Connection: close");
           client.println("");
-          // Serve the HTML content from the string
-          DEBUG_SERIAL.println("HTML CONTENT");
-          DEBUG_SERIAL.println(htmlContent);
-          client.print(htmlContent);  // Use the simple array for HTML content
+          // Serve the HTML content — don't println the full template
+          // body to serial; it's hundreds of bytes of noise.
+          client.print(htmlContent);
 
           break;
         } else {
@@ -162,9 +166,12 @@ bool handleAPClientRequest(WiFiClient &client) {
         confirmation += "button { background-color: #ec8703; color: white; border: none; padding: 15px; font-size: 16px; border-radius: 5px; cursor: not-allowed; }\n";
         confirmation += "</style></head><body>";
         confirmation += "<h2>Settings Submitted!</h2>";
+        // Confirm only the non-sensitive fields verbatim. Echo password
+        // and token as length-only so a passer-by glancing at the screen
+        // or a screenshot shared for support doesn't expose credentials.
         confirmation += "<p>SSID: " + htmlEscape(ssid) + "</p>";
-        confirmation += "<p>Password: " + htmlEscape(password) + "</p>";
-        confirmation += "<p>Token: " + htmlEscape(token) + "</p>";
+        confirmation += "<p>Password: <em>(" + String(password.length()) + " chars saved)</em></p>";
+        confirmation += "<p>Token: <em>(" + String(token.length()) + " chars saved)</em></p>";
         confirmation += "<p>Game Mode: " + htmlEscape(urlDecode(gameMode)) + "</p>";
         confirmation += "<p>Startup Type: " + htmlEscape(startupType) + "</p>";
         confirmation += "<p>Restarting the device... Please wait.</p>";

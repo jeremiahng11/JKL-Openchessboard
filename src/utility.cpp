@@ -155,6 +155,18 @@ String urlDecode(const String &encoded) {
   return decoded;
 }
 
+// Redact a secret for serial logs: show only length + first/last char
+// so the user can tell "yes a token is stored" without leaking it. The
+// raw token / WiFi password used to be printed on every boot, which is
+// a problem when users share serial logs (as they often do for support).
+static String redactSecret(const String& s) {
+  if (s.length() == 0) return "(empty)";
+  if (s.length() <= 4) return "(len=" + String(s.length()) + ")";
+  return String(s.charAt(0)) + "***" +
+         String(s.charAt(s.length() - 1)) +
+         " (len=" + String(s.length()) + ")";
+}
+
 void readSettings(void){
 
   preferences.begin("settings", true);
@@ -167,8 +179,8 @@ void readSettings(void){
     board_startupType = preferences.getString("startupType", "");
     DEBUG_SERIAL.println("Settings Loaded from Flash:");
     DEBUG_SERIAL.println("SSID: " + wifi_ssid);
-    DEBUG_SERIAL.println("Password: " + wifi_password);
-    DEBUG_SERIAL.println("Token: " + lichess_api_token);
+    DEBUG_SERIAL.println("Password: " + redactSecret(wifi_password));
+    DEBUG_SERIAL.println("Token: " + redactSecret(lichess_api_token));
     DEBUG_SERIAL.println("Game Mode: " + board_gameMode);
     DEBUG_SERIAL.println("Startup Type: " + board_startupType);
   } else {
