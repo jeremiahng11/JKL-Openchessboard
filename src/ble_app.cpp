@@ -231,7 +231,7 @@ public:
     DEBUG_SERIAL.println(move.c_str());
     
     clearDisplay();
-    if (!skip_next_send & move != "") {
+    if (!skip_next_send && move != "") {
       sendPeripheralMove(move);
       lastPeripheralMove = move;
     }

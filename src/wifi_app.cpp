@@ -178,7 +178,7 @@ void run_WiFi_app(void){
     // than after a full boot sequence.
     bool restartedMidGame = false;
 
-    while (is_game_running | is_seeking)
+    while (is_game_running || is_seeking)
     {
       // If getMoveInput requested a mid-game restart, resign here and
       // break out so the outer loop starts a new game.
@@ -240,15 +240,19 @@ void run_WiFi_app(void){
 
       moveStreamHandler();
 
-      if (myturn & latestMove == oppLastMove){
+      if (myturn && latestMove == oppLastMove){
         DEBUG_SERIAL.println("Wait for accept move input...");
         while (boardMove != latestMove){
+          // Check restart BEFORE the blocking displayMove() so a
+          // gesture made during the opponent's turn doesn't wait
+          // through one more full LED draw cycle.
+          if (restart_requested) break;
           displayMove(latestMove);
 
           boardMove = getMoveInput();
           if (restart_requested) break;
           String swapped_move = boardMove.substring(2, 4) + boardMove.substring(0, 2);
-          if(boardMove.substring(0, 2) == boardMove.substring(2, 4) | swapped_move == latestMove){
+          if(boardMove.substring(0, 2) == boardMove.substring(2, 4) || swapped_move == latestMove){
             boardMove = latestMove;
             break;
           }

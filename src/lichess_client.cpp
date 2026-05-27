@@ -91,17 +91,15 @@ void getStream(WiFiClientSecure  &client){
     
   } 
 
-void disableClient(WiFiClientSecure  &client){
-    client.println("GET /api/account/playing HTTP/1.1");
-    client.println("Host: lichess.org");
-    client.print("Authorization: Bearer ");
-    client.println(lichess_api_token);
-    client.println("Connection: close");
-    client.println("\n"); 
-    char* char_response = catchResponseFromClient(client);
+void disableClient(WiFiClientSecure &client){
+    // Just close the TLS socket — the previous implementation issued
+    // a fresh GET /api/account/playing on a stream socket that was
+    // mid-response and then blocked up to 800ms in
+    // catchResponseFromClient reading garbage. flush+stop is all we
+    // need to release the underlying TCP/TLS resources.
     client.flush();
     client.stop();
-  } 
+}
 
 /* ---------------------------------------
  *  Function to send get gameID request to Lichess API.
@@ -158,39 +156,44 @@ void getGameID(WiFiClientSecure  &client){
         DEBUG_SERIAL.print("last move: ");
         DEBUG_SERIAL.println(lastMove_temp);
 
-        if(lastMove_temp.length() == 4  & myturn){ //  last move was played by opponent and its my turn
+        if(lastMove_temp.length() == 4 && myturn){ //  last move was played by opponent and its my turn
             oppLastMove = lastMove_temp;
             latestMove = lastMove_temp;
             moves = lastMove_temp; // complete  board history not yet available
         }
-        if(lastMove_temp.length() == 4  & !myturn){ // last move was played by player and wait for opponent move
+        if(lastMove_temp.length() == 4 && !myturn){ // last move was played by player and wait for opponent move
             myLastMove = lastMove_temp;
             latestMove = lastMove_temp;
             moves = lastMove_temp; // complete  board history not yet available
         }
         setStatePlaying();
-        client.flush();
-        client.stop();     
     }
     else{
         currentGameID = "noGame";
         DEBUG_SERIAL.println("no Game found");
         delay(300);
     }
-    
+    // Close the socket on BOTH paths. The no-game branch used to leak
+    // the TLS session on every poll iteration because client.stop()
+    // was only called inside the game-found block.
+    client.flush();
+    client.stop();
 }
 
 char* catchResponseFromClient(WiFiClientSecure &client) {
-    static char char_response[2024] = {0}; 
+    // Doubled from 2024 — Lichess game-state responses past ~500 plies
+    // exceeded the old limit and got silently truncated, breaking JSON
+    // parsing forever for that game.
+    static char char_response[4096] = {0};
 
     unsigned long startTime = millis();
 
     while (!client.available()) {
         if (millis() - startTime > 800) {
-            char_response[0] = '\0'; 
+            char_response[0] = '\0';
             return char_response;
         }
-        delay(1); 
+        delay(1);
     }
 
     size_t length = 0;
@@ -198,8 +201,16 @@ char* catchResponseFromClient(WiFiClientSecure &client) {
         char c = client.read();
         char_response[length++] = c;
     }
-    char_response[length] = '\0'; 
-    return char_response; 
+    char_response[length] = '\0';
+    if (length == sizeof(char_response) - 1 && client.available()) {
+        DEBUG_SERIAL.print("catchResponseFromClient: TRUNCATED at ");
+        DEBUG_SERIAL.print(length);
+        DEBUG_SERIAL.println(" bytes; remaining response discarded");
+        // Drain the rest so the socket can be cleanly closed and we
+        // don't get desynced on the next request.
+        while (client.available()) client.read();
+    }
+    return char_response;
 }
 
 bool parseJsonResponse(const char* response, JsonDocument& doc) {

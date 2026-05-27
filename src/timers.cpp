@@ -34,12 +34,12 @@ void gameTimerHandler() {
         moves_temp = doc["state"]["moves"].as<String>();
         game_status = doc["state"]["status"].as<String>();
 
-        if (moves_temp == "null" | moves_temp == "" ){
+        if (moves_temp == "null" || moves_temp == ""){
           moves_temp = doc["moves"].as<String>();
           game_status = doc["status"].as<String>();
         }
 
-      	if (moves_temp == "null" | moves_temp == "" ){
+        if (moves_temp == "null" || moves_temp == ""){
           return;
         }
 
@@ -61,7 +61,7 @@ void gameTimerHandler() {
           is_game_running = true;
         }
         
-        if (moves.length() > 3 & game_status != "started"){
+        if (moves.length() > 3 && game_status != "started"){
           is_game_running = false;
           is_seeking = false;
           myturn = false;
@@ -95,8 +95,16 @@ void enableGameTimer() {
   timerAlarmEnable(timer);
 }
 void moveStreamHandler() {
+  // Two reasons to do work: the 100ms ISR set the flag (periodic
+  // heartbeat / WiFi liveness check), or there's already stream data
+  // waiting. The second case used to wait for the next ISR tick even
+  // when bytes were already queued, which gated AI-move-to-LED
+  // latency to ~100ms in the best case (and much worse when stacked
+  // with delay(100) calls in getMoveInput's wait-for-end loop).
   if (timerFlag) {
-    gameTimerHandler();      
+    gameTimerHandler();
     timerFlag = false;
+  } else if (StreamClient.available()) {
+    gameTimerHandler();
   }
 }

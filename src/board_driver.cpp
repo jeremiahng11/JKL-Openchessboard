@@ -248,7 +248,7 @@ String getMoveInput(void) {
           clearDisplay();
           return "";
         }
-        if (StreamClient.available() & board_startupType == "WiFi") {
+        if (board_startupType == "WiFi" && StreamClient.available()) {
           moveStreamHandler();
         }
         delay(50);
@@ -283,7 +283,7 @@ String getMoveInput(void) {
             clearDisplay();
             return "";
           }
-          if (StreamClient.available() & board_startupType == "WiFi") {
+          if (board_startupType == "WiFi" && StreamClient.available()) {
             moveStreamHandler();
           }
           delay(50);
@@ -308,7 +308,7 @@ String getMoveInput(void) {
           }
         }
       }
-      if (StreamClient.available() & board_startupType == "WiFi"){
+      if (board_startupType == "WiFi" && StreamClient.available()){
         moveStreamHandler();
       }
     }
@@ -361,7 +361,7 @@ String getMoveInput(void) {
           clearDisplay();
           return "";
         }
-        if (StreamClient.available() & board_startupType == "WiFi") {
+        if (board_startupType == "WiFi" && StreamClient.available()) {
           moveStreamHandler();
         }
         continue; // skip move-end detection while accumulating
@@ -393,7 +393,7 @@ String getMoveInput(void) {
             clearDisplay();
             return "";
           }
-          if (StreamClient.available() & board_startupType == "WiFi") {
+          if (board_startupType == "WiFi" && StreamClient.available()) {
             moveStreamHandler();
           }
           continue; // skip move-end detection while accumulating
@@ -403,13 +403,19 @@ String getMoveInput(void) {
       for (int row_index = 0; row_index < 8; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
 
-          int state_prev = bitRead(hallBoardState1[row_index], col_index);
+          // Three-sample debounce: a square is considered settled
+          // when two consecutive new samples (from hallBoardState2 +
+          // hallBoardState3, taken 100ms apart) both differ from
+          // hallBoardState1 in the same direction.
+          // Use bit_* locals so we don't shadow the outer 8-byte
+          // arrays of the same name (previously named hallBoardState1
+          // / hallBoardState2, which silently re-bound mid-loop).
+          int bit_prev = bitRead(hallBoardState1[row_index], col_index);
+          int bit_sample2 = bitRead(hallBoardState2[row_index], col_index);
+          int bit_sample3 = bitRead(hallBoardState3[row_index], col_index);
 
-          int hallBoardState1 = bitRead(hallBoardState2[row_index], col_index);
-          int hallBoardState2 = bitRead(hallBoardState3[row_index], col_index);
-
-          if ((hallBoardState1 != state_prev) && (hallBoardState2 != state_prev)) {
-            if (hallBoardState1  == hallBoardState2) {
+          if ((bit_sample2 != bit_prev) && (bit_sample3 != bit_prev)) {
+            if (bit_sample2 == bit_sample3) {
               mvFinished = true;
               ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
 
@@ -422,7 +428,7 @@ String getMoveInput(void) {
           }
         }
       }
-      if (StreamClient.available() & board_startupType == "WiFi"){
+      if (board_startupType == "WiFi" && StreamClient.available()){
         moveStreamHandler();
       }
     }
