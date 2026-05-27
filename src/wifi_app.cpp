@@ -11,6 +11,7 @@ bool is_game_running = false;
 bool is_seeking = false;
 bool dimLEDs  = false;
 bool restart_requested = false;
+bool ever_left_start_pos = false;
 
 // WiFi, and timer variables
 String wifi_ssid;
@@ -92,6 +93,10 @@ void run_WiFi_app(void){
 
         DEBUG_SERIAL.println("\nStart Game with prefered settings: "+ board_gameMode);
         postNewGame(PostClient,  board_gameMode);
+        // Reset the start-position-restart guard for the new game so
+        // the trigger only fires after pieces have actually moved.
+        ever_left_start_pos = false;
+        restart_requested = false;
       } else if (!is_game_running && !is_seeking) {
         // gameMode is "None" (or we're between polls): show the
         // center-squares 'searching for game' animation from the README
@@ -105,10 +110,11 @@ void run_WiFi_app(void){
     timerFlag = true;
     String boardMove;
 
-    // Tracks both-kings-off start time at the in-game-loop scope, so the
-    // restart trigger also fires during the OPPONENT's turn (when control
+    // Tracks both restart triggers' start times at the in-game-loop
+    // scope, so they also fire during the OPPONENT's turn (when control
     // is here instead of inside getMoveInput).
-    unsigned long opponentTurnKingsOffSinceMs = 0;
+    unsigned long ingameKingsOffSinceMs = 0;
+    unsigned long ingameStartPosSinceMs = 0;
 
     while (is_game_running | is_seeking)
     {
@@ -126,24 +132,46 @@ void run_WiFi_app(void){
         break;
       }
 
-      // Same trigger when control is here (opponent's turn — no
+      // Same triggers when control is here (opponent's turn — no
       // getMoveInput running). Sample a single hall read per iteration.
       {
         byte hallNow[8];
         readHall(hallNow);
+
+        // Trigger #1: both kings off >=5s.
         const bool e1Empty = bitRead(hallNow[4], 7) == 0;
         const bool e8Empty = bitRead(hallNow[4], 0) == 0;
         if (e1Empty && e8Empty) {
-          if (opponentTurnKingsOffSinceMs == 0) {
-            opponentTurnKingsOffSinceMs = millis();
-          } else if (millis() - opponentTurnKingsOffSinceMs >= 5000) {
+          if (ingameKingsOffSinceMs == 0) {
+            ingameKingsOffSinceMs = millis();
+          } else if (millis() - ingameKingsOffSinceMs >= 5000) {
             DEBUG_SERIAL.println("in-game loop: both kings off >=5s, requesting restart");
             restart_requested = true;
-            opponentTurnKingsOffSinceMs = 0;
-            continue; // top of loop handles the resign + break
+            ingameKingsOffSinceMs = 0;
+            continue;
           }
-        } else if (opponentTurnKingsOffSinceMs != 0) {
-          opponentTurnKingsOffSinceMs = 0;
+        } else if (ingameKingsOffSinceMs != 0) {
+          ingameKingsOffSinceMs = 0;
+        }
+
+        // Trigger #2: pieces back in starting position >=5s, gated by
+        // ever_left_start_pos so a brand-new game doesn't self-resign.
+        bool inStartPos = true;
+        for (int i = 0; i < 8; i++) {
+          if (hallNow[i] != 0xC3) { inStartPos = false; break; }
+        }
+        if (!inStartPos) {
+          ever_left_start_pos = true;
+          ingameStartPosSinceMs = 0;
+        } else if (ever_left_start_pos) {
+          if (ingameStartPosSinceMs == 0) {
+            ingameStartPosSinceMs = millis();
+          } else if (millis() - ingameStartPosSinceMs >= 5000) {
+            DEBUG_SERIAL.println("in-game loop: pieces back in start position >=5s, requesting restart");
+            restart_requested = true;
+            ingameStartPosSinceMs = 0;
+            continue;
+          }
         }
       }
 

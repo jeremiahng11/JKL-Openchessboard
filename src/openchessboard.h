@@ -56,10 +56,17 @@ extern bool is_seeking;
 extern bool dimLEDs;
 
 // True when the user has signalled a mid-game restart (both kings off
-// the board for the configured sustained duration). Game loops in
-// wifi_app / ble_app should check this between moves and, if set,
-// resign the current game and start a fresh one.
+// the board for the configured sustained duration, or all pieces
+// returned to the starting position after at least one move). Game
+// loops in wifi_app / ble_app should check this between moves and, if
+// set, resign the current game and start a fresh one.
 extern bool restart_requested;
+
+// True once the in-game piece layout has been observed to differ from
+// the standard starting position. Gates the "all pieces back in start"
+// restart trigger so a brand-new game (pieces already in start
+// position) doesn't immediately resign itself.
+extern bool ever_left_start_pos;
 
 // Settings object
 extern Preferences preferences;

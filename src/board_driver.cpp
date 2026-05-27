@@ -211,15 +211,13 @@ String getMoveInput(void) {
 
   // wait for Start move event
     unsigned long kingsOffSinceMs = 0;
+    unsigned long startPosSinceMs = 0;
     while (!mvStarted && is_game_running) {
 
       readHall(hallBoardState1);
 
-      // Mid-game restart trigger: both kings (e1 = byte 4 bit 7,
+      // Mid-game restart trigger #1: both kings (e1 = byte 4 bit 7,
       // e8 = byte 4 bit 0) off the board continuously for >=5s.
-      // Sets the global restart_requested flag and returns an empty
-      // move; the in-game loop sees the flag and resigns the current
-      // game before starting a new one.
       const bool e1Empty = bitRead(hallBoardState1[4], 7) == 0;
       const bool e8Empty = bitRead(hallBoardState1[4], 0) == 0;
       if (e1Empty && e8Empty) {
@@ -233,6 +231,29 @@ String getMoveInput(void) {
         }
       } else if (kingsOffSinceMs != 0) {
         kingsOffSinceMs = 0;
+      }
+
+      // Mid-game restart trigger #2: all pieces back in the starting
+      // position for >=5s, gated by ever_left_start_pos so the trigger
+      // doesn't immediately resign a brand-new game where pieces are
+      // already in starting position. The starting layout corresponds
+      // to every column having 0xC3 (pieces on ranks 1, 2, 7, 8).
+      bool inStartPos = true;
+      for (int i = 0; i < 8; i++) {
+        if (hallBoardState1[i] != 0xC3) { inStartPos = false; break; }
+      }
+      if (!inStartPos) {
+        ever_left_start_pos = true;
+        startPosSinceMs = 0;
+      } else if (ever_left_start_pos) {
+        if (startPosSinceMs == 0) {
+          startPosSinceMs = millis();
+        } else if (millis() - startPosSinceMs >= 5000) {
+          DEBUG_SERIAL.println("getMoveInput: pieces back in start position >=5s, requesting restart");
+          restart_requested = true;
+          clearDisplay();
+          return "";
+        }
       }
 
       for (int row_index = 0; row_index < 8; row_index++) {
