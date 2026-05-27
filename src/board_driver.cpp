@@ -184,6 +184,14 @@ String getMoveInput(void) {
   byte hallBoardState3[8];
   byte ledBoardState[8];
 
+  // Bitmap of squares that have transitioned occupied→empty since
+  // the move started. Tracked across BOTH wait phases so that when
+  // a place event resolves we can identify the source even if the
+  // user lifted both pieces (attacker + victim) before the poll
+  // sampled. The previous "first diff wins" detection mistakenly
+  // recorded the victim as the source for fast captures.
+  byte liftedSquares[8];
+
   // Outer retry loop. If the user lifts a piece and places it back on the
   // SAME square, the end-event detector below would still emit e.g. "e2e2"
   // — which the connected app/firmware always rejects as illegal, leaving
@@ -200,6 +208,7 @@ String getMoveInput(void) {
       hallBoardState2[k] = 0x00;
       hallBoardState3[k] = 0x00;
       ledBoardState[k] = 0x00;
+      liftedSquares[k] = 0x00;
     }
 
     bool mvStarted = false;
@@ -293,27 +302,22 @@ String getMoveInput(void) {
         }
       }
 
-      // Outer loop gated by !mvStarted so a single iteration of the
-      // wait-for-start poll appends exactly ONE square to mvInput.
-      // Previously the inner `break` only exited the col_index loop;
-      // the outer row_index loop kept iterating and could append
-      // multiple squares (e.g. after a re-sync where the user has
-      // adjusted several pieces), producing garbage UCI strings like
-      // 'e5d8c5b4a3...' that Lichess always rejected.
-      for (int row_index = 0; row_index < 8 && !mvStarted; row_index++) {
+      // Track EVERY lifted square (occupied at init → currently
+      // empty) in the liftedSquares bitmap and on the LED display.
+      // mvStarted flips to true on the first lift seen but we keep
+      // scanning so a fast capture (attacker + victim both lifted
+      // before the next poll) records BOTH lifts, not just the one
+      // that happens to come first in iteration order. The source
+      // gets resolved during the place-event detection below.
+      for (int row_index = 0; row_index < 8; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
-
-          int state1 = bitRead(hallBoardStateInit[row_index], col_index);
-          int state2 = bitRead(hallBoardState1[row_index], col_index);
-          if (state1  != state2) {
+          int initState = bitRead(hallBoardStateInit[row_index], col_index);
+          int nowState = bitRead(hallBoardState1[row_index], col_index);
+          if (initState == 1 && nowState == 0) {
+            // Lifted square — record + light LED.
+            bitSet(liftedSquares[row_index], col_index);
             ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
-            #ifdef PLUG_AT_TOP
-            mvInput = mvInput + (String)columns[7 - col_index] + (String)(7 - row_index + 1);
-            #else
-            mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
-            #endif
             mvStarted = true;
-            break;
           }
         }
       }
@@ -412,41 +416,85 @@ String getMoveInput(void) {
         }
       }
 
-      // Same outer-loop gating as wait-for-start: append exactly ONE
-      // end square per iteration. Previously wait-for-end had no
-      // break at all, so a re-sync scenario where the user adjusted
-      // multiple pieces between the start and end of detection would
-      // append a square name for every changed cell — producing
-      // garbage UCI strings like 'e5d8c5b4a3...' that Lichess always
-      // rejected. We now record the FIRST settled change found and
-      // skip the rest until the next getMoveInput call.
+      // First, refresh liftedSquares with any NEW lifts that
+      // happened after wait-for-start completed (e.g. a slow capture
+      // where the user lifts the victim AFTER the attacker). A
+      // square becomes "lifted" when it was occupied at init AND is
+      // currently empty (debounced via both samples agreeing).
+      for (int row_index = 0; row_index < 8; row_index++) {
+        for (int col_index = 0; col_index < 8; col_index++) {
+          int initState = bitRead(hallBoardStateInit[row_index], col_index);
+          int s2 = bitRead(hallBoardState2[row_index], col_index);
+          int s3 = bitRead(hallBoardState3[row_index], col_index);
+          if (initState == 1 && s2 == 0 && s3 == 0 &&
+              !bitRead(liftedSquares[row_index], col_index)) {
+            bitSet(liftedSquares[row_index], col_index);
+            ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
+          }
+        }
+      }
+
+      // Look for a single PLACE event — a square that is now
+      // occupied (debounced) AND either was empty at init OR is in
+      // the liftedSquares set (capture destination). When found,
+      // resolve the source from the still-empty lifted squares.
       for (int row_index = 0; row_index < 8 && !mvFinished; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
+          int initState = bitRead(hallBoardStateInit[row_index], col_index);
+          int s2 = bitRead(hallBoardState2[row_index], col_index);
+          int s3 = bitRead(hallBoardState3[row_index], col_index);
 
-          // Three-sample debounce: a square is considered settled
-          // when two consecutive new samples (from hallBoardState2 +
-          // hallBoardState3, taken 100ms apart) both differ from
-          // hallBoardState1 in the same direction.
-          // Use bit_* locals so we don't shadow the outer 8-byte
-          // arrays of the same name (previously named hallBoardState1
-          // / hallBoardState2, which silently re-bound mid-loop).
-          int bit_prev = bitRead(hallBoardState1[row_index], col_index);
-          int bit_sample2 = bitRead(hallBoardState2[row_index], col_index);
-          int bit_sample3 = bitRead(hallBoardState3[row_index], col_index);
+          // Stable as "occupied" only if both samples agree.
+          if (!(s2 == 1 && s3 == 1)) continue;
 
-          if ((bit_sample2 != bit_prev) && (bit_sample3 != bit_prev)) {
-            if (bit_sample2 == bit_sample3) {
-              mvFinished = true;
-              ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
+          const bool wasLifted = bitRead(liftedSquares[row_index], col_index);
+          const bool wasEmptyAtInit = (initState == 0);
+          if (!wasLifted && !wasEmptyAtInit) continue;
+          // Square is now occupied AND it travelled through "empty"
+          // at some point during this move → this is the place
+          // event (destination).
 
+          // Compute destination square name.
+          String destSq;
+          #ifdef PLUG_AT_TOP
+          destSq = (String)columns[7 - col_index] + (String)(7 - row_index + 1);
+          #else
+          destSq = (String)columns[7-row_index] + (String)(col_index + 1);
+          #endif
+
+          // Find the source: the lifted square that's STILL empty
+          // and is NOT the destination itself. For a normal move
+          // there's exactly one such square. For a fast capture
+          // (attacker + victim lifted together) liftedSquares has
+          // two; one matches the destination (victim square, now
+          // refilled), the other is still empty (attacker source).
+          String srcSq;
+          for (int sR = 0; sR < 8 && srcSq.length() == 0; sR++) {
+            for (int sC = 0; sC < 8; sC++) {
+              if (sR == row_index && sC == col_index) continue;
+              if (!bitRead(liftedSquares[sR], sC)) continue;
+              if (bitRead(hallBoardState3[sR], sC) != 0) continue;
               #ifdef PLUG_AT_TOP
-              mvInput = mvInput + (String)columns[7 - col_index] + (String)(7 - row_index + 1);
+              srcSq = (String)columns[7 - sC] + (String)(7 - sR + 1);
               #else
-              mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
+              srcSq = (String)columns[7-sR] + (String)(sC + 1);
               #endif
-              break; // exit the col loop; outer guard handles row loop
+              break;
             }
           }
+
+          mvFinished = true;
+          ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
+
+          if (srcSq.length() == 0) {
+            // No other lifted square → user lifted-and-replaced at
+            // the same square. Emit a same-square sentinel so the
+            // caller's existing cancel check ("from == to") fires.
+            mvInput = destSq + destSq;
+          } else {
+            mvInput = srcSq + destSq;
+          }
+          break;
         }
       }
       if (board_startupType == "WiFi" && StreamClient.available()){
