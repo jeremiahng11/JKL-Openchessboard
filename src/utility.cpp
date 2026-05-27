@@ -281,11 +281,17 @@ void readBoardSelection(){
   if (matched) {
     DEBUG_SERIAL.println("Mode selection matched: " + board_startupType);
   } else {
-    // No piece lifted within the window. Force BLE so the user always
-    // gets a predictable startup mode regardless of what was previously
-    // saved via the access point config.
-    board_startupType = "BLE";
-    DEBUG_SERIAL.println("No mode selection within 20s; defaulting to BLE");
+    // No piece touched within the window. Fall back to whatever
+    // readSettings() loaded from flash (the user-configured default via
+    // the access point). If flash is empty / unset, last-resort to BLE so
+    // there's always a runnable mode.
+    if (board_startupType.length() == 0) {
+      board_startupType = "BLE";
+      DEBUG_SERIAL.println("No mode selection and no saved default; using BLE");
+    } else {
+      DEBUG_SERIAL.println(
+        "No mode selection within 20s; using saved default: " + board_startupType);
+    }
   }
 
   // Clear hint LEDs before the chosen mode takes over.
