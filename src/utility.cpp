@@ -210,9 +210,34 @@ void readBoardSelection(){
   const unsigned long startMs = millis();
   bool matched = false;
   byte hallCurrent[8];
+  byte hallLast[8];
+  memcpy(hallLast, hallInitial, 8);
+
+  DEBUG_SERIAL.println("--- Mode-select window open (20s); watching for bit changes ---");
 
   while (millis() - startMs < selectionWindowMs) {
     readHall(hallCurrent);
+
+    // Diagnostic: log every bit that changed since the previous poll so
+    // the user can correlate physical actions to raw hall coordinates.
+    // Print format: `change @ byte=B bit=b : 0->1` (or 1->0).
+    for (int b = 0; b < 8; b++) {
+      const byte diff = hallCurrent[b] ^ hallLast[b];
+      if (diff == 0) continue;
+      for (int bit = 0; bit < 8; bit++) {
+        if (!bitRead(diff, bit)) continue;
+        const int now = bitRead(hallCurrent[b], bit);
+        DEBUG_SERIAL.print("change @ byte=");
+        DEBUG_SERIAL.print(b);
+        DEBUG_SERIAL.print(" bit=");
+        DEBUG_SERIAL.print(bit);
+        DEBUG_SERIAL.print(" : ");
+        DEBUG_SERIAL.print(1 - now);
+        DEBUG_SERIAL.print("->");
+        DEBUG_SERIAL.println(now);
+      }
+    }
+    memcpy(hallLast, hallCurrent, 8);
 
     // Mode A/B/C: any of the three target squares' hall sensor changed
     // state in either direction (piece lifted OR placed). Whichever
