@@ -92,7 +92,7 @@ bool isNewVersionAvailable(String latest_version) {
 
 
 bool fetchLatestVersion(String& latest_version) {   
-    const char* url = "/TimoKropp/OPENCHESSBOARD_WiFi/main_nano_esp32/release/version.json";
+    const char* url = "/jeremiahng11/JKL-Openchessboard/main/release/version.json";
     const int maxRetries = 3;  
     const unsigned long retryDelay = 3000;  
     int fetchRetries = 0;
@@ -157,7 +157,7 @@ bool downloadFirmware(String latest_version) {
         if (client.connect("raw.githubusercontent.com", 443)) {
             DEBUG_SERIAL.println("Connected to server for downloading firmware version: " +  latest_version);
 
-            client.print(String("GET /TimoKropp/OPENCHESSBOARD_WiFi/main_nano_esp32/release/") + "firmware_v" + latest_version +".bin"+ " HTTP/1.1\r\n" +
+            client.print(String("GET /jeremiahng11/JKL-Openchessboard/main/release/") + "firmware_v" + latest_version +".bin"+ " HTTP/1.1\r\n" +
                          "Host: raw.githubusercontent.com\r\n" +
                          "User-Agent: ESP32\r\n" +
                          "Connection: keep-alive\r\n\r\n");
@@ -194,7 +194,7 @@ bool downloadFirmware(String latest_version) {
                 uint8_t buffer[chunkSize];
                 while (client.connected() && totalWritten < contentLength) {
                     String rangeHeader = "Range: bytes=" + String(currentByte) + "-" + String(currentByte + chunkSize - 1);
-                    client.print(String("GET /TimoKropp/OPENCHESSBOARD_WiFi/main_nano_esp32/release/") + "firmware_v" + latest_version + " HTTP/1.1\r\n" +
+                    client.print(String("GET /jeremiahng11/JKL-Openchessboard/main/release/") + "firmware_v" + latest_version + " HTTP/1.1\r\n" +
                                  "Host: raw.githubusercontent.com\r\n" +
                                  "User-Agent: ESP32\r\n" +
                                  "Connection: keep-alive\r\n" +
