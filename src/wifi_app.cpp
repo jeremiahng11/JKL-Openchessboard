@@ -92,7 +92,11 @@ void run_WiFi_app(void){
         // detection (which would produce two redundant "no Game found"
         // log lines and an unnecessary 5s wait window).
         DEBUG_SERIAL.println("\nStart Game with prefered settings: " + board_gameMode);
-        postNewGame(PostClient, board_gameMode);
+        if (!postNewGame(PostClient, board_gameMode)) {
+          DEBUG_SERIAL.println("postNewGame rejected by Lichess; backing off 5s before retrying");
+          delay(5000);
+          continue; // retry from outer find-game loop, don't pretend we posted
+        }
         ever_left_start_pos = false;
         restart_requested = false;
         kings_off_since_ms = 0;
@@ -112,7 +116,11 @@ void run_WiFi_app(void){
         // lines on the common cold-boot path.
         if (isStartingPosition()) {
           DEBUG_SERIAL.println("\nBoard in start position; starting new game directly: " + board_gameMode);
-          postNewGame(PostClient, board_gameMode);
+          if (!postNewGame(PostClient, board_gameMode)) {
+            DEBUG_SERIAL.println("postNewGame rejected by Lichess; backing off 5s before retrying");
+            delay(5000);
+            continue;
+          }
           ever_left_start_pos = false;
           restart_requested = false;
           kings_off_since_ms = 0;
@@ -139,7 +147,11 @@ void run_WiFi_app(void){
         }
 
         DEBUG_SERIAL.println("\nStart Game with prefered settings: "+ board_gameMode);
-        postNewGame(PostClient,  board_gameMode);
+        if (!postNewGame(PostClient, board_gameMode)) {
+          DEBUG_SERIAL.println("postNewGame rejected by Lichess; backing off 5s before retrying");
+          delay(5000);
+          continue;
+        }
         // Reset the start-position-restart guard for the new game so
         // the trigger only fires after pieces have actually moved.
         ever_left_start_pos = false;
@@ -154,10 +166,19 @@ void run_WiFi_app(void){
         // center-squares 'searching for game' animation from the README
         // so the user knows the board is alive and waiting.
         displayWaitForGame();
+        // Throttle so we're not hammering /api/account/playing at full
+        // speed when the user has nothing scheduled. 1.5s gives a
+        // responsive feel without pegging the network or burning the
+        // token's rate-limit budget.
+        delay(1500);
       }
     }
 
     getStream(StreamClient);
+    // First successful Lichess request after boot — mark the OTA
+    // partition valid so the bootloader stops considering rollback.
+    // Safe no-op once already marked.
+    confirmFirmwareWorking();
     dimLEDs = false;
     timerFlag = true;
     String boardMove;

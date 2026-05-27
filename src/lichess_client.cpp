@@ -230,7 +230,7 @@ bool parseJsonResponse(const char* response, JsonDocument& doc) {
     return true;
 }
 
-void postNewGame(WiFiClientSecure &client, String board_gameMode) {
+bool postNewGame(WiFiClientSecure &client, String board_gameMode) {
     String rated_str = "false";
     String variant = "standard";
     String ratingRange = "";  // Optional
@@ -239,13 +239,13 @@ void postNewGame(WiFiClientSecure &client, String board_gameMode) {
     String incrementStr;
     String endpoint;
     String requestBody;
-    
+
     if (board_gameMode.startsWith("AI level ")) {
         // AI Challenge Mode
         int level = board_gameMode.substring(9).toInt();  // Extract and convert to integer
         if (level < 1 || level > 8) {
             DEBUG_SERIAL.println("Invalid AI level.");
-            return;
+            return false;
         }
         
         endpoint = "/api/challenge/ai";  // API endpoint
@@ -263,7 +263,7 @@ void postNewGame(WiFiClientSecure &client, String board_gameMode) {
             incrementStr = board_gameMode.substring(plusPos + 1);
         } else {
             DEBUG_SERIAL.println("Invalid time control format.");
-            return;
+            return false;
         }
 
         endpoint = "/api/board/seek";  // Correct API endpoint
@@ -297,8 +297,35 @@ void postNewGame(WiFiClientSecure &client, String board_gameMode) {
     client.println(requestBody);  // Send body
 
     char* char_response = catchResponseFromClient(client);
-    is_seeking = true;
-    //DEBUG_SERIAL.println(char_response);^
     client.flush();
     client.stop();
+
+    // Parse the HTTP status line. Lichess returns 2xx on accepted
+    // challenges/seeks and 4xx on errors (rate limit, bad token,
+    // invalid AI level, etc.). Previously we set is_seeking = true
+    // unconditionally — when Lichess refused the request the outer
+    // loop would then spin forever in the "searching" animation
+    // with no recovery short of a power cycle.
+    int statusCode = 0;
+    if (strncmp(char_response, "HTTP/", 5) == 0) {
+        const char* sp = strchr(char_response, ' ');
+        if (sp != nullptr) {
+            statusCode = atoi(sp + 1);
+        }
+    }
+    DEBUG_SERIAL.print("postNewGame HTTP status: ");
+    DEBUG_SERIAL.println(statusCode);
+    const bool ok = (statusCode >= 200 && statusCode < 300);
+    if (!ok) {
+        DEBUG_SERIAL.print("postNewGame FAILED; response head: ");
+        // Print up to first 200 chars of the response body so the
+        // user has something to act on (often a clear Lichess error).
+        for (int i = 0; i < 200 && char_response[i] != '\0'; i++) {
+            DEBUG_SERIAL.print(char_response[i]);
+        }
+        DEBUG_SERIAL.println();
+        return false;
+    }
+    is_seeking = true;
+    return true;
 }

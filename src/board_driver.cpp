@@ -831,10 +831,16 @@ void displayWaitForGame(void) {
 
 
 void displayMoveRecect(String move){
-  for (int k = 0; k < 3; k++){
+  // 2 blinks at 100ms on/off = ~400ms total. Previously this ran 3
+  // iterations at 200ms each (~1.2s); stacked with the 3-strike
+  // rejection failsafe that meant ~3.6s of frozen UI during which
+  // no stream events were processed and no restart trigger could
+  // fire. Shorter blink stays visually clear without freezing the
+  // game loop.
+  for (int k = 0; k < 2; k++) {
     clearDisplay();
-    delay(200);
+    delay(100);
     displayMove(move);
-    delay(200); 
+    delay(100);
   }
 }

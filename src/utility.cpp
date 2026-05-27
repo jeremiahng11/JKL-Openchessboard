@@ -64,7 +64,7 @@ void setStateBooting(void){
   latestMove = "zz";
   myMove = "noMove";
   moves = "noMoves";
-  currentGameID = "noGameID";
+  currentGameID = "noGame";
   //myturn = false;
 }
 
@@ -79,7 +79,7 @@ void setStateUpdating(void){
   latestMove = "zz";
   myMove = "yy";
   moves = "";
-  currentGameID = "noGameID";
+  currentGameID = "noGame";
   //myturn = false;
 }
 /* ---------------------------------------
@@ -98,7 +98,7 @@ void setStateConnecting(void){
   latestMove = "zz";
   myMove = "yy";
   moves = "";
-  currentGameID = "noGameID";
+  currentGameID = "noGame";
   //myturn = false;
 }
 
@@ -271,7 +271,14 @@ void readBoardSelection(){
   // Also track the queen-puzzle layout (8 pieces stacked on the h column).
   byte puzzlePattern[8] = {0xFF, 0, 0, 0, 0, 0, 0, 0};
 
+  // Full window: 20s. Early-exit window: if the user has touched
+  // nothing in the first 3 seconds AND a non-default saved mode
+  // exists, fall through to the saved mode immediately — most boots
+  // are the user wanting to resume the same mode (WiFi) without
+  // waiting through the full 20s. The full 20s still applies if no
+  // saved mode is set, so first-time setup still works.
   const unsigned long selectionWindowMs = 20000;
+  const unsigned long earlyExitMs = 3000;
   const unsigned long pollIntervalMs = 100;
   const unsigned long startMs = millis();
   bool matched = false;
@@ -279,9 +286,24 @@ void readBoardSelection(){
   byte hallLast[8];
   memcpy(hallLast, hallInitial, 8);
 
-  DEBUG_SERIAL.println("--- Mode-select window open (20s); watching for bit changes ---");
+  // Has the user ever made a saved mode choice? If preferences holds
+  // a non-empty startup type, we trust the 3s early-exit.
+  preferences.begin("settings", true);
+  const String savedStartupType = preferences.getString("startupType", "");
+  preferences.end();
+  const bool hasSavedMode = savedStartupType.length() > 0;
+
+  DEBUG_SERIAL.print("--- Mode-select window open (");
+  DEBUG_SERIAL.print(selectionWindowMs / 1000);
+  DEBUG_SERIAL.print("s, early-exit after ");
+  DEBUG_SERIAL.print(earlyExitMs / 1000);
+  DEBUG_SERIAL.println("s if no input and saved mode exists) ---");
 
   while (millis() - startMs < selectionWindowMs) {
+    if (hasSavedMode && (millis() - startMs > earlyExitMs)) {
+      DEBUG_SERIAL.println("No mode-select input within early-exit window; using saved mode immediately");
+      break;
+    }
     readHall(hallCurrent);
 
     // Diagnostic: log every bit that changed since the previous poll so
