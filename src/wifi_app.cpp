@@ -46,20 +46,32 @@ void run_WiFi_app(void){
     DEBUG_SERIAL.println("\nConnected to Server...");
     DEBUG_SERIAL.println("Find ongoing game");
 
+    // The wifi-setup phase blinks a4 via displayConnectWait(); once
+    // we're connected, clear that stuck LED before showing the
+    // 'searching for game' indicator. Without this the a4 LED stayed
+    // lit indefinitely while the board polled for ongoing games.
+    is_connecting = false;
+    clearDisplay();
+
     while(!is_game_running){
       getGameID(PostClient);
-      
+
       //Start new game if no game is running and seek not already started
       if (board_gameMode != "None"  && !is_seeking &&  !is_game_running){
-        DEBUG_SERIAL.println("\nWait for Starting Position");   
+        DEBUG_SERIAL.println("\nWait for Starting Position");
         while(!isStartingPosition()){
           delay(100);
         }
-        
+
         DEBUG_SERIAL.println("\nStart Game with prefered settings: "+ board_gameMode);
         postNewGame(PostClient,  board_gameMode);
-      } 
-    }  
+      } else if (!is_game_running && !is_seeking) {
+        // gameMode is "None" (or we're between polls): show the
+        // center-squares 'searching for game' animation from the README
+        // so the user knows the board is alive and waiting.
+        displayWaitForGame();
+      }
+    }
 
     getStream(StreamClient);   
     dimLEDs = false;
