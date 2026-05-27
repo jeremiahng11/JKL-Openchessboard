@@ -12,6 +12,7 @@ bool is_seeking = false;
 bool dimLEDs  = false;
 bool restart_requested = false;
 bool ever_left_start_pos = false;
+unsigned long kings_off_since_ms = 0;
 
 // WiFi, and timer variables
 String wifi_ssid;
@@ -112,6 +113,7 @@ void run_WiFi_app(void){
         // the trigger only fires after pieces have actually moved.
         ever_left_start_pos = false;
         restart_requested = false;
+        kings_off_since_ms = 0;
         // Suppress the override on the next iteration so getGameID
         // finding *our* newly-created game doesn't immediately resign it.
         wePostedNewGame = true;

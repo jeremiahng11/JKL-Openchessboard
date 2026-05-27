@@ -210,50 +210,39 @@ String getMoveInput(void) {
     readHall(hallBoardStateInit);
 
   // wait for Start move event
-    unsigned long kingsOffSinceMs = 0;
-    unsigned long startPosSinceMs = 0;
     while (!mvStarted && is_game_running) {
 
       readHall(hallBoardState1);
 
-      // Mid-game restart trigger #1: both kings (e1 = byte 4 bit 7,
+      // Mid-game restart trigger: both kings (e1 = byte 4 bit 7,
       // e8 = byte 4 bit 0) off the board continuously for >=5s.
+      // Uses the global kings_off_since_ms so the accumulator survives
+      // across getMoveInput() invocations.
+      //
+      // While the accumulator is running, SKIP move-motion detection
+      // for this poll. Otherwise lifting the first king fires
+      // mvStarted=true (motion at e1), exits wait-for-start, and the
+      // trigger never gets a chance to accumulate.
       const bool e1Empty = bitRead(hallBoardState1[4], 7) == 0;
       const bool e8Empty = bitRead(hallBoardState1[4], 0) == 0;
       if (e1Empty && e8Empty) {
-        if (kingsOffSinceMs == 0) {
-          kingsOffSinceMs = millis();
-        } else if (millis() - kingsOffSinceMs >= 5000) {
-          DEBUG_SERIAL.println("getMoveInput: both kings off >=5s, requesting restart");
+        if (kings_off_since_ms == 0) {
+          kings_off_since_ms = millis();
+          DEBUG_SERIAL.println("getMoveInput[wait-start]: both kings off, accumulating 5s...");
+        } else if (millis() - kings_off_since_ms >= 5000) {
+          DEBUG_SERIAL.println("getMoveInput[wait-start]: both kings off >=5s, requesting restart");
           restart_requested = true;
           clearDisplay();
           return "";
         }
-      } else if (kingsOffSinceMs != 0) {
-        kingsOffSinceMs = 0;
-      }
-
-      // Mid-game restart trigger #2: all pieces back in the starting
-      // position for >=5s, gated by ever_left_start_pos so the trigger
-      // doesn't immediately resign a brand-new game where pieces are
-      // already in starting position. The starting layout corresponds
-      // to every column having 0xC3 (pieces on ranks 1, 2, 7, 8).
-      bool inStartPos = true;
-      for (int i = 0; i < 8; i++) {
-        if (hallBoardState1[i] != 0xC3) { inStartPos = false; break; }
-      }
-      if (!inStartPos) {
-        ever_left_start_pos = true;
-        startPosSinceMs = 0;
-      } else if (ever_left_start_pos) {
-        if (startPosSinceMs == 0) {
-          startPosSinceMs = millis();
-        } else if (millis() - startPosSinceMs >= 5000) {
-          DEBUG_SERIAL.println("getMoveInput: pieces back in start position >=5s, requesting restart");
-          restart_requested = true;
-          clearDisplay();
-          return "";
+        if (StreamClient.available() & board_startupType == "WiFi") {
+          moveStreamHandler();
         }
+        delay(50);
+        continue; // skip motion detection while accumulating
+      } else if (kings_off_since_ms != 0) {
+        DEBUG_SERIAL.println("getMoveInput[wait-start]: king replaced, resetting timer");
+        kings_off_since_ms = 0;
       }
 
       for (int row_index = 0; row_index < 8; row_index++) {
@@ -290,6 +279,33 @@ String getMoveInput(void) {
       delay(100);
       readHall(hallBoardState3);
       delay(100);
+
+      // Same restart trigger as wait-for-start: both kings off >=5s.
+      // Critical to also have this here because lifting the first king
+      // already set mvStarted, so by the time the user lifts the second
+      // king we're in wait-for-end. Without this, the second lift would
+      // be detected as the move's end-square and getMoveInput would
+      // return e.g. "e1e8" instead of triggering the restart.
+      const bool e1Empty_e = bitRead(hallBoardState3[4], 7) == 0;
+      const bool e8Empty_e = bitRead(hallBoardState3[4], 0) == 0;
+      if (e1Empty_e && e8Empty_e) {
+        if (kings_off_since_ms == 0) {
+          kings_off_since_ms = millis();
+          DEBUG_SERIAL.println("getMoveInput[wait-end]: both kings off, accumulating 5s...");
+        } else if (millis() - kings_off_since_ms >= 5000) {
+          DEBUG_SERIAL.println("getMoveInput[wait-end]: both kings off >=5s, requesting restart");
+          restart_requested = true;
+          clearDisplay();
+          return "";
+        }
+        if (StreamClient.available() & board_startupType == "WiFi") {
+          moveStreamHandler();
+        }
+        continue; // skip move-end detection while accumulating
+      } else if (kings_off_since_ms != 0) {
+        DEBUG_SERIAL.println("getMoveInput[wait-end]: king replaced, resetting timer");
+        kings_off_since_ms = 0;
+      }
 
       for (int row_index = 0; row_index < 8; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {

@@ -62,6 +62,15 @@ extern bool dimLEDs;
 // set, resign the current game and start a fresh one.
 extern bool restart_requested;
 
+// millis() at which both kings were first observed off the board.
+// 0 = either at least one king is present, or we're not currently
+// tracking. Kept global so the 5-second accumulator survives across
+// getMoveInput() invocations — the previous function-local timer was
+// reset on every call, which prevented the trigger from ever firing
+// in real gameplay where each piece motion produces a new
+// getMoveInput.
+extern unsigned long kings_off_since_ms;
+
 // True once the in-game piece layout has been observed to differ from
 // the standard starting position. Gates the "all pieces back in start"
 // restart trigger so a brand-new game (pieces already in start
