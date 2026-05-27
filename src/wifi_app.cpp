@@ -56,10 +56,38 @@ void run_WiFi_app(void){
     while(!is_game_running){
       getGameID(PostClient);
 
+      // If a game was found on Lichess but the user has all pieces in
+      // the starting position on the physical board, they're signalling
+      // 'I want a new game, not to resume this one'. Resign the found
+      // game and loop back so the new-game flow takes over.
+      if (is_game_running && board_gameMode != "None" && isStartingPosition()) {
+        DEBUG_SERIAL.print("Override resume: board in start position, resigning ");
+        DEBUG_SERIAL.println(currentGameID);
+        resignGame(PostClient, currentGameID);
+        is_game_running = false;
+        currentGameID = "noGame";
+        delay(800); // let the server process the resignation
+        continue;
+      }
+
       //Start new game if no game is running and seek not already started
       if (board_gameMode != "None"  && !is_seeking &&  !is_game_running){
         DEBUG_SERIAL.println("\nWait for new-game trigger (start position OR both kings off 5s)");
         waitForNewGameTrigger(5000);
+
+        // Belt-and-braces: a game might have appeared on Lichess while
+        // we were waiting (correspondence challenge accepted, etc.).
+        // Resign it before posting our own new game so the user actually
+        // gets the game their gesture asked for.
+        getGameID(PostClient);
+        if (is_game_running) {
+          DEBUG_SERIAL.print("Game appeared during trigger wait, resigning ");
+          DEBUG_SERIAL.println(currentGameID);
+          resignGame(PostClient, currentGameID);
+          is_game_running = false;
+          currentGameID = "noGame";
+          delay(800);
+        }
 
         DEBUG_SERIAL.println("\nStart Game with prefered settings: "+ board_gameMode);
         postNewGame(PostClient,  board_gameMode);

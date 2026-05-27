@@ -5,6 +5,41 @@
  *  @params[in] WiFiClientSecure
  *  @return void
 */
+/* ---------------------------------------
+ *  Resigns the given Lichess game via the Board API.
+ *  POST /api/board/game/{gameId}/resign
+ *  @return true if Lichess returned {"ok":true}, false otherwise.
+*/
+bool resignGame(WiFiClientSecure &client, String gameId) {
+  if (gameId.length() != 8) {
+    DEBUG_SERIAL.println("resignGame: invalid gameId, skipping");
+    return false;
+  }
+  if (!client.connected()) {
+    client.connect(server, 443);
+  }
+  client.print("POST /api/board/game/");
+  client.print(gameId);
+  client.println("/resign HTTP/1.1");
+  client.println("Host: lichess.org");
+  client.print("Authorization: Bearer ");
+  client.println(lichess_api_token);
+  client.println("Connection: close");
+  client.println("\n");
+  delay(200);
+  char* char_response = catchResponseFromClient(client);
+  client.stop();
+  JsonDocument doc;
+  bool ok = false;
+  if (parseJsonResponse(char_response, doc)) {
+    ok = doc["ok"].as<bool>();
+  }
+  DEBUG_SERIAL.print("resignGame ");
+  DEBUG_SERIAL.print(gameId);
+  DEBUG_SERIAL.println(ok ? ": ok" : ": failed");
+  return ok;
+}
+
 bool postMove(WiFiClientSecure  &client, String move) {
             if (!client.connected()) {
                 client.connect(server, 443);
