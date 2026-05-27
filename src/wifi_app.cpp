@@ -267,6 +267,12 @@ void run_WiFi_app(void){
       if (myturn){
         DEBUG_SERIAL.println("Wait for board move input...");
         bool moveSuccess = false;
+        // Failsafe so WiFi-mode users (no phone-app guidance) can
+        // escape a stuck "invalid move" loop after a physical takeback:
+        // after 3 consecutive rejected moves auto-request a restart so
+        // the outer loop resigns the unrecoverable game and posts a
+        // fresh one with the same settings.
+        int consecutiveRejects = 0;
         while(is_game_running){ // wait for sucessful move transmission to get to opponents turn
           boardMove = getMoveInput();
           if (restart_requested) break;
@@ -279,6 +285,7 @@ void run_WiFi_app(void){
           if (moveSuccess){
             myLastMove = boardMove;
             myturn = false;
+            consecutiveRejects = 0;
             break;
           }
           else{
@@ -291,11 +298,21 @@ void run_WiFi_app(void){
               boardMove = swapped_move;
               myLastMove = boardMove;
               myturn = false;
+              consecutiveRejects = 0;
               break;
             }
-            DEBUG_SERIAL.println("invalid move. wait for move take back...");
+            consecutiveRejects++;
+            DEBUG_SERIAL.print("invalid move (");
+            DEBUG_SERIAL.print(consecutiveRejects);
+            DEBUG_SERIAL.println("/3). wait for move take back...");
             displayMoveRecect(boardMove);
+            if (consecutiveRejects >= 3) {
+              DEBUG_SERIAL.println("3 consecutive invalid moves; auto-requesting mid-game restart");
+              restart_requested = true;
+              break;
+            }
             boardMove = getMoveInput();
+            if (restart_requested) break;
           }
         }
       }
