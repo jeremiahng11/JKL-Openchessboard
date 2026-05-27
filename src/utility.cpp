@@ -277,18 +277,23 @@ void readBoardSelection(){
   // (The createFen() pipeline applies rotate90CCW + rotate180 to bring
   // these raw coordinates into FEN orientation, which is why an exact
   // empty / starting-position pattern like 0xC3 fits across all bytes.)
-  const uint8_t modeBytes[3] = {0, 1, 2};
+  // a1/b1/c1 = WiFi/BLE/AP; d1 added as a one-shot "LED self-test"
+  // mode for diagnosing dead LEDs after a hardware repair. Sweeps
+  // every square in turn so the user can visually confirm each LED
+  // is alive.
+  const uint8_t modeBytes[4] = {0, 1, 2, 3};
   const uint8_t modeBit = 7;
-  const char* modeNames[3] = {"WiFi", "BLE", "AP"};
+  const char* modeNames[4] = {"WiFi", "BLE", "AP", "TESTLED"};
 
-  // Hint LEDs marking a1, b1, c1 so the user sees which piece to lift
-  // (or place) to select a mode. LED address space is independent of the
-  // hall-sensor address space, so the LED bytes/bits stay as they were —
-  // it's only the *hall* mapping that was wrong.
+  // Hint LEDs marking a1, b1, c1, d1 so the user sees which piece to
+  // lift (or place) to select a mode. LED address space is independent
+  // of the hall-sensor address space, so the LED bytes/bits stay as
+  // they were — it's only the *hall* mapping that was wrong.
   byte hintLeds[8] = {0};
   hintLeds[7] = 0x01;
   hintLeds[6] = 0x01;
   hintLeds[5] = 0x01;
+  hintLeds[4] = 0x01;
   displayArray(hintLeds);
 
   // Brief settling delay so the hall sensors have time to stabilise after
@@ -364,7 +369,7 @@ void readBoardSelection(){
     // Mode A/B/C: any of the three target squares' hall sensor changed
     // state in either direction (piece lifted OR placed). Whichever
     // square the user touches first wins.
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       const bool wasPresent = bitRead(hallInitial[modeBytes[i]], modeBit) != 0;
       const bool nowPresent = bitRead(hallCurrent[modeBytes[i]], modeBit) != 0;
       if (wasPresent != nowPresent) {
@@ -418,4 +423,48 @@ void readBoardSelection(){
 
   // Clear hint LEDs before the chosen mode takes over.
   clearDisplay();
+}
+
+/// LED self-test: walks every (byte, bit) position in the LED matrix
+/// so the user can visually inspect each square's LED in isolation
+/// after a hardware repair. Triggered by lifting/placing on d1
+/// during the boot mode-select window.
+///
+/// Sweep order: byte 0 → byte 7, within each byte bit 7 → bit 0,
+/// so the visual progression matches reading a board from one corner
+/// to the other (regardless of the firmware's coordinate convention).
+/// Each LED held lit for 500ms, with the LED's byte/bit number printed
+/// to serial so any dark square can be cross-referenced with the
+/// firmware coordinate.
+///
+/// Loops forever — user power-cycles or boot-selects a different mode
+/// to exit.
+void run_led_test(void) {
+  DEBUG_SERIAL.println("\n=== LED SELF-TEST ===");
+  DEBUG_SERIAL.println("Sweeping all 64 LEDs (byte 0..7, within each byte bit 7..0)");
+  DEBUG_SERIAL.println("Watch for any square that stays dark; power-cycle to exit.");
+
+  while (true) {
+    for (int b = 0; b < 8; b++) {
+      for (int bit = 7; bit >= 0; bit--) {
+        byte frame[8] = {0};
+        frame[b] = (1 << bit);
+        displayArray(frame);
+        DEBUG_SERIAL.print("LED byte=");
+        DEBUG_SERIAL.print(b);
+        DEBUG_SERIAL.print(" bit=");
+        DEBUG_SERIAL.println(bit);
+        delay(500);
+      }
+    }
+    // After the sweep, light every LED at once for 2s so any DEAD
+    // square is obvious against the lit field.
+    DEBUG_SERIAL.println("--- All LEDs ON for 2s ---");
+    byte allOn[8];
+    memset(allOn, 0xFF, 8);
+    displayArray(allOn);
+    delay(2000);
+    clearDisplay();
+    delay(500);
+  }
 }

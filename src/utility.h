@@ -11,3 +11,4 @@ extern bool isStartingPosition(void);
 extern bool waitForNewGameTrigger(unsigned long bothKingsRemovedMs);
 extern void readSettings(void);
 extern void readBoardSelection(void);
+extern void run_led_test(void);

@@ -37,6 +37,11 @@ else if (board_startupType == "PUZZLE"){
   DEBUG_SERIAL.println("\nRun queen puzzle App...");
   run_queen_puzzle();
 }
+else if (board_startupType == "TESTLED"){
+  disableGameTimer();
+  DEBUG_SERIAL.println("\nRun LED self-test...");
+  run_led_test();
+}
 else{
     DEBUG_SERIAL.println("\nRun Access Point to Fetch Settings...");
     run_APsettings(); // runs until settings are submitted
