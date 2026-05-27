@@ -267,10 +267,27 @@ void run_BLE_app(){
   #endif
 
   while(!is_game_running){
+    #ifndef USE_NIM_BLE_ARDUINO_LIB
+      // Pre-game pre-poll so onCentralBegin can fire; without this
+      // on the ArduinoBLE path the begin callback could be delayed
+      // for the duration of one displayWaitForGame() pass.
+      BLE.poll();
+    #endif
     ArduinoBleOTA.pull();
     displayWaitForGame();
   }
-  while(true){ // while BLE connected
+  // In-game loop. Previously this was `while(true)` with no exit, so
+  // a BLE disconnect mid-game left the firmware spinning in
+  // checkPeripheralMove forever. Tying it to is_game_running lets the
+  // onCentralEnd callback (which clears the flag) actually break us
+  // out, and a manual BLE.poll() + OTA.pull() each iteration lets
+  // central-side events and OTA updates be processed mid-game on
+  // ArduinoBLE (NimBLE has its own task, so polling is a no-op there).
+  while(is_game_running){
+    #ifndef USE_NIM_BLE_ARDUINO_LIB
+      BLE.poll();
+    #endif
+    ArduinoBleOTA.pull();
     peripheral.checkPeripheralMove();
   }
 }
