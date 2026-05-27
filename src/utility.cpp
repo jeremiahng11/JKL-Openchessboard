@@ -179,36 +179,74 @@ void readBoardSelection(){
   memset(pattern3, 0xC3, sizeof(pattern3));
   memset(pattern4, 0x00, sizeof(pattern4));
 
-  pattern1[7] =0xC2; // remove piece on a1 to select this
-  pattern2[6] =0xC2; // remove piece on b1 to select this
-  pattern3[5] =0xC2; // remove piece on b1 to select this
+  pattern1[7] = 0xC2; // remove a1 (mode A): WiFi standalone
+  pattern2[6] = 0xC2; // remove b1 (mode B): BLE app
+  pattern3[5] = 0xC2; // remove c1 (mode C): config access point
 
-  pattern4[0] =0xFF; // place 8 pieces on h column (plug at right)
-  
+  pattern4[0] = 0xFF; // place 8 pieces on h column (plug at right): queen-puzzle
 
+  // Hint LEDs that mark the three single-piece-removal squares (a1, b1, c1)
+  // so the user knows which piece to lift to select a mode. Bit positions
+  // match the hall-sensor mapping for those squares.
+  byte hintLeds[8] = {0};
+  hintLeds[7] = 0x01;
+  hintLeds[6] = 0x01;
+  hintLeds[5] = 0x01;
+  displayArray(hintLeds);
+
+  // Poll for up to selectionWindowMs; exit early on the first pattern
+  // match. The previous one-shot read fired before the user could even
+  // place pieces, so on every reboot the board fell through to the saved
+  // default (typically "BLE") and the mode-select feature was effectively
+  // dead.
+  const unsigned long selectionWindowMs = 6000;
+  const unsigned long pollIntervalMs = 100;
+  const unsigned long startMs = millis();
+  bool matched = false;
+
+  while (millis() - startMs < selectionWindowMs) {
+    readHall(read_hall_array);
+    if (memcmp(read_hall_array, pattern1, 8) == 0) {
+      board_startupType = "WiFi";
+      matched = true;
+      break;
+    }
+    if (memcmp(read_hall_array, pattern2, 8) == 0) {
+      board_startupType = "BLE";
+      matched = true;
+      break;
+    }
+    if (memcmp(read_hall_array, pattern3, 8) == 0) {
+      board_startupType = "AP";
+      matched = true;
+      break;
+    }
+    if (memcmp(read_hall_array, pattern4, 8) == 0) {
+      board_startupType = "PUZZLE";
+      matched = true;
+      break;
+    }
+    delay(pollIntervalMs);
+  }
+
+  // Final sensor snapshot for the debug log so we can diagnose
+  // mode-selection failures from serial output.
   readHall(read_hall_array);
   DEBUG_SERIAL.print("read_hall_array: ");
-
   for (int i = 0; i < 8; i++) {
-      Serial.print(read_hall_array[i], HEX);
-      if (i < 8 - 1) {
-          DEBUG_SERIAL.print(", "); 
-      }
+    Serial.print(read_hall_array[i], HEX);
+    if (i < 8 - 1) {
+      DEBUG_SERIAL.print(", ");
+    }
   }
-    DEBUG_SERIAL.println(); // Newline at the end
-  if (memcmp(read_hall_array, pattern1, 8) == 0){
-    board_startupType = "WiFi";
+  DEBUG_SERIAL.println();
+  if (matched) {
+    DEBUG_SERIAL.println("Mode selection matched: " + board_startupType);
+  } else {
+    DEBUG_SERIAL.println(
+      "No mode selection within window; falling back to saved default: " + board_startupType);
   }
-  else if (memcmp(read_hall_array, pattern2, 8) == 0)
-  {
-    board_startupType = "BLE";
-  }
-  else if (memcmp(read_hall_array, pattern3, 8) == 0)
-  {
-    board_startupType = "AP";
-  }
-  else if (memcmp(read_hall_array, pattern4, 8) == 0)
-  {
-    board_startupType = "PUZZLE";
-  }
+
+  // Clear hint LEDs before the chosen mode takes over.
+  clearDisplay();
 }
