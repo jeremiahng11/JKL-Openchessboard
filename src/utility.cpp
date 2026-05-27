@@ -198,7 +198,7 @@ void readBoardSelection(){
   // match. The previous one-shot read fired before the user could even
   // place pieces, so on every reboot the board fell through to the saved
   // default and the mode-select feature was effectively dead.
-  const unsigned long selectionWindowMs = 10000;
+  const unsigned long selectionWindowMs = 20000;
   const unsigned long pollIntervalMs = 100;
   const unsigned long startMs = millis();
   bool matched = false;
@@ -246,7 +246,7 @@ void readBoardSelection(){
     // gets a predictable startup mode regardless of what was previously
     // saved via the access point config.
     board_startupType = "BLE";
-    DEBUG_SERIAL.println("No mode selection within 10s; defaulting to BLE");
+    DEBUG_SERIAL.println("No mode selection within 20s; defaulting to BLE");
   }
 
   // Clear hint LEDs before the chosen mode takes over.
