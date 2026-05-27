@@ -223,6 +223,19 @@ String getMoveInput(void) {
       // for this poll. Otherwise lifting the first king fires
       // mvStarted=true (motion at e1), exits wait-for-start, and the
       // trigger never gets a chance to accumulate.
+      {
+        static byte lastByte4ws = 0xFF;
+        if (hallBoardState1[4] != lastByte4ws) {
+          DEBUG_SERIAL.print("wait-start byte4=0x");
+          DEBUG_SERIAL.print(hallBoardState1[4], HEX);
+          DEBUG_SERIAL.print(" (bit7=");
+          DEBUG_SERIAL.print(bitRead(hallBoardState1[4], 7));
+          DEBUG_SERIAL.print(" bit0=");
+          DEBUG_SERIAL.print(bitRead(hallBoardState1[4], 0));
+          DEBUG_SERIAL.println(")");
+          lastByte4ws = hallBoardState1[4];
+        }
+      }
       const bool e1Empty = bitRead(hallBoardState1[4], 7) == 0;
       const bool e8Empty = bitRead(hallBoardState1[4], 0) == 0;
       if (e1Empty && e8Empty) {
@@ -286,6 +299,23 @@ String getMoveInput(void) {
       // king we're in wait-for-end. Without this, the second lift would
       // be detected as the move's end-square and getMoveInput would
       // return e.g. "e1e8" instead of triggering the restart.
+      //
+      // Diagnostic: log byte 4 whenever it changes, so we can see in
+      // serial output whether the sensor actually reports both kings
+      // lifted or whether the bit mapping needs adjustment.
+      {
+        static byte lastByte4 = 0xFF;
+        if (hallBoardState3[4] != lastByte4) {
+          DEBUG_SERIAL.print("wait-end byte4=0x");
+          DEBUG_SERIAL.print(hallBoardState3[4], HEX);
+          DEBUG_SERIAL.print(" (bit7=");
+          DEBUG_SERIAL.print(bitRead(hallBoardState3[4], 7));
+          DEBUG_SERIAL.print(" bit0=");
+          DEBUG_SERIAL.print(bitRead(hallBoardState3[4], 0));
+          DEBUG_SERIAL.println(")");
+          lastByte4 = hallBoardState3[4];
+        }
+      }
       const bool e1Empty_e = bitRead(hallBoardState3[4], 7) == 0;
       const bool e8Empty_e = bitRead(hallBoardState3[4], 0) == 0;
       if (e1Empty_e && e8Empty_e) {
