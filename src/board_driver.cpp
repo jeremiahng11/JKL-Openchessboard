@@ -302,20 +302,18 @@ String getMoveInput(void) {
         }
       }
 
-      // Track EVERY lifted square (occupied at init → currently
-      // empty) in the liftedSquares bitmap and on the LED display.
-      // mvStarted flips to true on the first lift seen but we keep
-      // scanning so a fast capture (attacker + victim both lifted
-      // before the next poll) records BOTH lifts, not just the one
-      // that happens to come first in iteration order. The source
-      // gets resolved during the place-event detection below.
+      // Wait-for-start is just a phase-transition trigger: as soon
+      // as ANY square has gone from occupied to empty, advance to
+      // wait-for-end where the actual liftedSquares tracking happens
+      // with debouncing. Light up tentative LEDs for visual feedback
+      // but DON'T write to liftedSquares here — a single-sample
+      // sensor noise spike on one cell would otherwise permanently
+      // mis-record that cell as lifted and corrupt source resolution.
       for (int row_index = 0; row_index < 8; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
           int initState = bitRead(hallBoardStateInit[row_index], col_index);
           int nowState = bitRead(hallBoardState1[row_index], col_index);
           if (initState == 1 && nowState == 0) {
-            // Lifted square — record + light LED.
-            bitSet(liftedSquares[row_index], col_index);
             ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
             mvStarted = true;
           }
