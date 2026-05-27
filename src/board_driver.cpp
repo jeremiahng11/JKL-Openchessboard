@@ -184,103 +184,126 @@ String getMoveInput(void) {
   byte hallBoardState3[8];
   byte ledBoardState[8];
 
-  for (int k = 0; k < 8; k++) {
-    hallBoardStateInit[k] = 0x00;
-    hallBoardState1[k] = 0x00;
-    hallBoardState2[k] = 0x00;
-    hallBoardState3[k] = 0x00;
-    ledBoardState[k] = 0x00;
-  }
+  // Outer retry loop. If the user lifts a piece and places it back on the
+  // SAME square, the end-event detector below would still emit e.g. "e2e2"
+  // — which the connected app/firmware always rejects as illegal, leaving
+  // the user in a reject-loop. Detect that case as a cancelled move and
+  // restart detection from scratch instead of reporting it.
+  bool moveCancelled;
+  do {
+    moveCancelled = false;
+    mvInput = "";
 
-  bool mvStarted = false;
-  bool mvFinished = false;
-
-
-  // get inital position
-  readHall(hallBoardStateInit);
-
-// wait for Start move event
-  while (!mvStarted && is_game_running) {
-
-    readHall(hallBoardState1);
-
-    for (int row_index = 0; row_index < 8; row_index++) {
-      for (int col_index = 0; col_index < 8; col_index++) {
-
-        int state1 = bitRead(hallBoardStateInit[row_index], col_index);
-        int state2 = bitRead(hallBoardState1[row_index], col_index);
-        if (state1  != state2) {
-          ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
-          #ifdef PLUG_AT_TOP
-          mvInput = mvInput + (String)columns[7 - col_index] + (String)(7 - row_index + 1);
-          #else
-          mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
-          #endif
-          mvStarted = true;
-          break;
-        }
-      }
+    for (int k = 0; k < 8; k++) {
+      hallBoardStateInit[k] = 0x00;
+      hallBoardState1[k] = 0x00;
+      hallBoardState2[k] = 0x00;
+      hallBoardState3[k] = 0x00;
+      ledBoardState[k] = 0x00;
     }
-    if (StreamClient.available() & board_startupType == "WiFi"){
-      moveStreamHandler();
-    }
-  }
 
-  digitalWrite(LED_LATCH_PIN, 0);
-  shiftOut(ledBoardState);
-  digitalWrite(LED_LATCH_PIN, 1);
-  digitalWrite(LED_OE_N_PIN , 0);
+    bool mvStarted = false;
+    bool mvFinished = false;
 
-// wait for end move event
-  while (!mvFinished  && is_game_running) {
 
-    readHall(hallBoardState2);
-    delay(100);
-    readHall(hallBoardState3);
-    delay(100);
+    // get inital position
+    readHall(hallBoardStateInit);
 
-    for (int row_index = 0; row_index < 8; row_index++) {
-      for (int col_index = 0; col_index < 8; col_index++) {
+  // wait for Start move event
+    while (!mvStarted && is_game_running) {
 
-        int state_prev = bitRead(hallBoardState1[row_index], col_index);
+      readHall(hallBoardState1);
 
-        int hallBoardState1 = bitRead(hallBoardState2[row_index], col_index);
-        int hallBoardState2 = bitRead(hallBoardState3[row_index], col_index);
+      for (int row_index = 0; row_index < 8; row_index++) {
+        for (int col_index = 0; col_index < 8; col_index++) {
 
-        if ((hallBoardState1 != state_prev) && (hallBoardState2 != state_prev)) {
-          if (hallBoardState1  == hallBoardState2) {
-            mvFinished = true;
+          int state1 = bitRead(hallBoardStateInit[row_index], col_index);
+          int state2 = bitRead(hallBoardState1[row_index], col_index);
+          if (state1  != state2) {
             ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
-
             #ifdef PLUG_AT_TOP
             mvInput = mvInput + (String)columns[7 - col_index] + (String)(7 - row_index + 1);
             #else
             mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
             #endif
+            mvStarted = true;
+            break;
           }
         }
       }
+      if (StreamClient.available() & board_startupType == "WiFi"){
+        moveStreamHandler();
+      }
     }
-    if (StreamClient.available() & board_startupType == "WiFi"){
-      moveStreamHandler();
-    }
-  }
-  
-  digitalWrite(LED_LATCH_PIN, 0);
-  shiftOut(ledBoardState);
-  digitalWrite(LED_LATCH_PIN, 1);
 
-  if (dimLEDs){
-    analogWrite(LED_OE_N_PIN , 150);
-  }
-  else{
+    digitalWrite(LED_LATCH_PIN, 0);
+    shiftOut(ledBoardState);
+    digitalWrite(LED_LATCH_PIN, 1);
     digitalWrite(LED_OE_N_PIN , 0);
-  }
+
+  // wait for end move event
+    while (!mvFinished  && is_game_running) {
+
+      readHall(hallBoardState2);
+      delay(100);
+      readHall(hallBoardState3);
+      delay(100);
+
+      for (int row_index = 0; row_index < 8; row_index++) {
+        for (int col_index = 0; col_index < 8; col_index++) {
+
+          int state_prev = bitRead(hallBoardState1[row_index], col_index);
+
+          int hallBoardState1 = bitRead(hallBoardState2[row_index], col_index);
+          int hallBoardState2 = bitRead(hallBoardState3[row_index], col_index);
+
+          if ((hallBoardState1 != state_prev) && (hallBoardState2 != state_prev)) {
+            if (hallBoardState1  == hallBoardState2) {
+              mvFinished = true;
+              ledBoardState[7 - row_index] |= 1UL << (7 - col_index);
+
+              #ifdef PLUG_AT_TOP
+              mvInput = mvInput + (String)columns[7 - col_index] + (String)(7 - row_index + 1);
+              #else
+              mvInput = mvInput + (String)columns[7-row_index] + (String)(col_index + 1);
+              #endif
+            }
+          }
+        }
+      }
+      if (StreamClient.available() & board_startupType == "WiFi"){
+        moveStreamHandler();
+      }
+    }
+
+    digitalWrite(LED_LATCH_PIN, 0);
+    shiftOut(ledBoardState);
+    digitalWrite(LED_LATCH_PIN, 1);
+
+    if (dimLEDs){
+      analogWrite(LED_OE_N_PIN , 150);
+    }
+    else{
+      digitalWrite(LED_OE_N_PIN , 0);
+    }
 
 
-  delay(300);
+    delay(300);
+    clearDisplay();
+
+    // Same-square cancel detection. mvInput is always 4 chars at this
+    // point ("ccrr" + "ccrr"); if from and to match the user just put the
+    // piece back where they got it. Silently restart and wait for the
+    // next motion.
+    if (mvInput.length() == 4 &&
+        mvInput.charAt(0) == mvInput.charAt(2) &&
+        mvInput.charAt(1) == mvInput.charAt(3)) {
+      DEBUG_SERIAL.print("move cancelled (same square): ");
+      DEBUG_SERIAL.println(mvInput);
+      moveCancelled = true;
+    }
+  } while (moveCancelled && is_game_running);
   #endif
-  clearDisplay();
   return mvInput;
 
 }
