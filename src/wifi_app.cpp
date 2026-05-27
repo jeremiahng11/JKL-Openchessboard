@@ -104,6 +104,24 @@ void run_WiFi_app(void){
 
       //Start new game if no game is running and seek not already started
       if (board_gameMode != "None"  && !is_seeking &&  !is_game_running){
+        // Fast path: if no ongoing game AND the physical board is
+        // already in the starting position, skip the trigger-wait +
+        // belt-and-braces re-poll entirely. The user has clearly set
+        // up the board to play; posting immediately matches the
+        // override-resume behaviour above and removes the redundant
+        // "Wait for new-game trigger" / second "no Game found" log
+        // lines on the common cold-boot path.
+        if (isStartingPosition()) {
+          DEBUG_SERIAL.println("\nBoard in start position; starting new game directly: " + board_gameMode);
+          postNewGame(PostClient, board_gameMode);
+          ever_left_start_pos = false;
+          restart_requested = false;
+          kings_off_since_ms = 0;
+          start_pos_since_ms = 0;
+          wePostedNewGame = true;
+          continue;
+        }
+
         DEBUG_SERIAL.println("\nWait for new-game trigger (start position OR both kings off 5s)");
         waitForNewGameTrigger(5000);
 
@@ -140,7 +158,7 @@ void run_WiFi_app(void){
       }
     }
 
-    getStream(StreamClient);   
+    getStream(StreamClient);
     dimLEDs = false;
     timerFlag = true;
     String boardMove;
@@ -150,6 +168,15 @@ void run_WiFi_app(void){
     // is here instead of inside getMoveInput).
     unsigned long ingameKingsOffSinceMs = 0;
     unsigned long ingameStartPosSinceMs = 0;
+
+    // Distinguishes "game ended naturally" (mate/resign by opponent/
+    // timeout/etc.) from "user gestured a mid-game restart". For the
+    // former we tear everything down and ESP.restart() as before; for
+    // the latter we want to skip the reboot and loop back to the
+    // outer find-/post-new-game flow, reusing the existing WiFi/Post
+    // clients so the new game starts in a couple of seconds rather
+    // than after a full boot sequence.
+    bool restartedMidGame = false;
 
     while (is_game_running | is_seeking)
     {
@@ -164,6 +191,7 @@ void run_WiFi_app(void){
         restart_requested = false;
         currentGameID = "noGame";
         delay(800);
+        restartedMidGame = true;
         break;
       }
 
@@ -273,6 +301,27 @@ void run_WiFi_app(void){
       }
     }
     
+    if (restartedMidGame) {
+      // Mid-game restart: skip the post-game flicker animation, keep
+      // WiFi + PostClient up, just close the stream and reset
+      // per-game state, then continue the outer WiFi loop. The
+      // find-game block at the top will see no game on Lichess and
+      // (since the board is typically in start position by this
+      // point) take the fast-path direct post above.
+      DEBUG_SERIAL.println("game ended (mid-game restart); starting next game without reboot");
+      clearDisplay();
+      disableClient(StreamClient);
+      myLastMove = "xx";
+      oppLastMove = "xy";
+      latestMove = "zz";
+      moves = "";
+      myturn = false;
+      ever_left_start_pos = false;
+      kings_off_since_ms = 0;
+      start_pos_since_ms = 0;
+      continue;
+    }
+
     byte frame[8];
     flickeringAnimation(frame);
     clearDisplay();
@@ -281,6 +330,6 @@ void run_WiFi_app(void){
     disableClient(PostClient);
     WiFi.disconnect(true,true);
     ESP.restart();
-  }  
+  }
 }
 
