@@ -549,13 +549,22 @@ void clearDisplay(void) {
  *  @return void
 */  
 void displayConnectWait(void) {
+  // Gate the flip on a real time interval rather than call-count.
+  // Previously update_flipstate toggled on EVERY call, so a caller
+  // looping at kHz (e.g. inside the OTA download path) saw the LED
+  // toggle at hundreds of Hz — visually always-on, no useful
+  // "waiting" feedback. 300ms gives a clearly-visible blink.
+  static unsigned long lastFlipMs = 0;
+  const unsigned long blinkIntervalMs = 300;
+  if (millis() - lastFlipMs >= blinkIntervalMs) {
+    update_flipstate ^= true;
+    lastFlipMs = millis();
+  }
+
   byte connect_led_array[8] = {0};
-
-
   if (update_flipstate) {
     connect_led_array[0] = 0x10;
   }
-  update_flipstate ^= true;
 
   digitalWrite(LED_OE_N_PIN , 1);
   digitalWrite(LED_MR_N_PIN, 0);
@@ -563,13 +572,12 @@ void displayConnectWait(void) {
   digitalWrite(LED_LATCH_PIN, 0);
   shiftOut(connect_led_array);
   digitalWrite(LED_LATCH_PIN, 1);
-    if (dimLEDs){
+  if (dimLEDs){
     analogWrite(LED_OE_N_PIN , 150);
   }
   else{
     digitalWrite(LED_OE_N_PIN , 0);
   }
-
 }
 
 
@@ -580,6 +588,19 @@ void displayConnectWait(void) {
  *  @return void
 */  
 void setDisplayMove(byte led_data_array[], String move_string) {
+
+  // Guard against sentinel/empty inputs ("xx", "yy", "noMove", "")
+  // so we don't read past end-of-string and silently light up a1.
+  // Any non-4-char or non-board move string is a no-op.
+  if (move_string.length() < 4) return;
+  const char c0 = move_string.charAt(0);
+  const char c1 = move_string.charAt(1);
+  const char c2 = move_string.charAt(2);
+  const char c3 = move_string.charAt(3);
+  if (c0 < 'a' || c0 > 'h' || c2 < 'a' || c2 > 'h' ||
+      c1 < '1' || c1 > '8' || c3 < '1' || c3 > '8') {
+    return;
+  }
 
   const char columns[] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
   const char rows[] = {'1', '2', '3', '4', '5', '6', '7', '8'};
@@ -592,19 +613,19 @@ void setDisplayMove(byte led_data_array[], String move_string) {
 
   for (int k = 0; k < 8; k++)
   {
-    if (columns[k] == move_string.charAt(0)) {
+    if (columns[k] == c0) {
       col1 = k;
     }
-    if (columns[k] == move_string.charAt(2)) {
+    if (columns[k] == c2) {
       col2 = k;
     }
   }
 
   for (int k = 0; k < 8; k++) {
-    if (rows[k] == move_string.charAt(1)) {
+    if (rows[k] == c1) {
       row1 = k;
     }
-    if (rows[k] == move_string.charAt(3)) {
+    if (rows[k] == c3) {
       row2 = k;
     }
   }

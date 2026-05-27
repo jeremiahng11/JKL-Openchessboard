@@ -186,11 +186,14 @@ public:
     if (is_game_running) {
       DEBUG_SERIAL.print("move rejected: ");
       DEBUG_SERIAL.println(lastPeripheralMove.c_str());
-      for (int k = 0; k < 3; k++){
+      // 2 blinks at 100ms (was 3 blinks at 200ms = ~1.2s). Matches
+      // the shortened WiFi displayMoveRecect — keeps BLE callback
+      // context from blocking for over a second.
+      for (int k = 0; k < 2; k++) {
         clearDisplay();
-        delay(200);
+        delay(100);
         displayMove(lastPeripheralMove.c_str());
-        delay(200); 
+        delay(100);
       }
       skip_next_send = true; /* give one try to reverse move, before sending next move to central */
     }

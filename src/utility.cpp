@@ -5,8 +5,15 @@
  *  @return substring
 */
 String GetStringBetweenStrings(String input, String firstdel, String enddel) {
-  int posfrom = input.indexOf(firstdel) + firstdel.length();
-  int posto   = input.indexOf(enddel);
+  // Validate both delimiters were found before slicing — previously
+  // a missing delimiter made indexOf return -1, which then got
+  // arithmetic'd into a positive-but-wrong position and substring()
+  // returned garbage. Empty string is the safer default here.
+  int firstPos = input.indexOf(firstdel);
+  if (firstPos == -1) return "";
+  int posfrom = firstPos + firstdel.length();
+  int posto = input.indexOf(enddel, posfrom);
+  if (posto == -1 || posto < posfrom) return "";
   return input.substring(posfrom, posto);
 }
 
@@ -58,14 +65,20 @@ void setStateBooting(void){
   is_booting = true;
   is_connecting = false;
   is_updating = false;
-  is_seeking = false;   
+  is_seeking = false;
+  // Sentinel strings unified across the three setState* helpers so
+  // downstream code (which compares against literal "xx"/"xy"/"zz"
+  // and empty "moves") behaves consistently regardless of which
+  // state we just transitioned from. Previously setStateBooting
+  // used "noMove" / "noMoves" while the others used "yy" / "" —
+  // any code path that string-compared the move strings could
+  // silently change behaviour based on prior transition history.
   myLastMove = "xx";
   oppLastMove = "xy";
   latestMove = "zz";
-  myMove = "noMove";
-  moves = "noMoves";
+  myMove = "yy";
+  moves = "";
   currentGameID = "noGame";
-  //myturn = false;
 }
 
 void setStateUpdating(void){
@@ -80,7 +93,6 @@ void setStateUpdating(void){
   myMove = "yy";
   moves = "";
   currentGameID = "noGame";
-  //myturn = false;
 }
 /* ---------------------------------------
  *  function to set connecting state and initializes state variables
@@ -99,7 +111,6 @@ void setStateConnecting(void){
   myMove = "yy";
   moves = "";
   currentGameID = "noGame";
-  //myturn = false;
 }
 
 void setStatePlaying(void){
@@ -114,10 +125,21 @@ String urlDecode(const String &encoded) {
   String decoded = "";
   char ch;
   int i = 0;
-  while (i < encoded.length()) {
+  while (i < (int)encoded.length()) {
     ch = encoded.charAt(i);
     if (ch == '%') {
-      // Get the next two characters after %
+      // Validate there are two hex chars after the '%' before
+      // consuming. A trailing '%' or '%A' at end-of-string used to
+      // substring past the end and strtol garbage to 0 (NUL byte),
+      // silently corrupting SSIDs/tokens with embedded nulls that
+      // truncate downstream string operations.
+      if (i + 2 >= (int)encoded.length() ||
+          !isxdigit(encoded.charAt(i + 1)) ||
+          !isxdigit(encoded.charAt(i + 2))) {
+        decoded += ch;
+        i++;
+        continue;
+      }
       String hexCode = encoded.substring(i + 1, i + 3);
       decoded += (char) strtol(hexCode.c_str(), NULL, 16);
       i += 3;

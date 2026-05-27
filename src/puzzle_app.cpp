@@ -174,12 +174,33 @@ int countQueens(byte hallBoardState[]) {
 
 void run_queen_puzzle(void) {
     dimLEDs = true;
+    // Tracks how long the board has been completely empty so the
+    // user has a way out — clear every piece and the board reboots
+    // back to mode-select. Without this the puzzle was a one-way
+    // door requiring a power-cycle.
+    unsigned long emptyBoardSinceMs = 0;
     while (true) {
-        static bool flickeringShown = false; 
-        byte hallBoardState[8];  
-        byte frame[8]; 
+        static bool flickeringShown = false;
+        byte hallBoardState[8];
+        byte frame[8];
 
         readHall(hallBoardState);
+
+        // Escape hatch: all squares empty for 5s = back to mode-select.
+        bool allEmpty = true;
+        for (int i = 0; i < 8; i++) {
+            if (hallBoardState[i] != 0x00) { allEmpty = false; break; }
+        }
+        if (allEmpty) {
+            if (emptyBoardSinceMs == 0) {
+                emptyBoardSinceMs = millis();
+            } else if (millis() - emptyBoardSinceMs >= 5000) {
+                DEBUG_SERIAL.println("Queen puzzle: board empty for 5s, rebooting back to mode-select");
+                ESP.restart();
+            }
+        } else {
+            emptyBoardSinceMs = 0;
+        }
 
         highlightAttackedPieces(hallBoardState, frame);
 
@@ -190,14 +211,14 @@ void run_queen_puzzle(void) {
         int queenCount = countQueens(hallBoardState);
 
         if (isFrameFull(frame) && queenCount == 8) {
-            if (!flickeringShown) { 
+            if (!flickeringShown) {
                 flickeringAnimation(frame);
                 flickeringShown = true;
             }
             delay(5000);
-            ESP.restart();  
+            ESP.restart();
         } else {
-            flickeringShown = false; 
+            flickeringShown = false;
         }
 
         displayFrame(frame);

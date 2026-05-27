@@ -13,15 +13,37 @@ WiFiServer APserver(80);
 Preferences preferences;
 
 
+// HTML-escape a string before embedding in the confirmation page —
+// previously the form values (SSID, password, token) were echoed back
+// to the browser raw, so a SSID like '<script>alert(1)</script>' would
+// execute. Reflected XSS at provisioning time isn't catastrophic but
+// it's a free fix.
+String htmlEscape(const String& s) {
+  String out;
+  out.reserve(s.length());
+  for (size_t i = 0; i < s.length(); i++) {
+    char c = s[i];
+    switch (c) {
+      case '&':  out += "&amp;";  break;
+      case '<':  out += "&lt;";   break;
+      case '>':  out += "&gt;";   break;
+      case '"':  out += "&quot;"; break;
+      case '\'': out += "&#39;";  break;
+      default:   out += c;        break;
+    }
+  }
+  return out;
+}
+
 // Function to extract form data from the POST request
 String getFormData(String request, String key) {
   int startIndex = request.indexOf(key + "=");
   if (startIndex == -1) return "";
-  
+
   startIndex += key.length() + 1;  // Skip the key part
   int endIndex = request.indexOf("&", startIndex);
   if (endIndex == -1) endIndex = request.length();
-  
+
   return request.substring(startIndex, endIndex);
 }
 
@@ -103,6 +125,25 @@ bool handleAPClientRequest(WiFiClient &client) {
         gameMode = getFormData(requestBody, "gameMode");
         startupType = getFormData(requestBody, "startupType");
 
+        // Reject obviously-bad submissions before touching NVS so a
+        // malformed POST can't leave the board with an empty SSID
+        // and an unrecoverable boot loop. SSID is the load-bearing
+        // field; everything else can in principle be empty.
+        if (ssid.length() == 0 || ssid.length() > 64 ||
+            password.length() > 64 || token.length() > 128 ||
+            gameMode.length() > 32 || startupType.length() > 16) {
+          DEBUG_SERIAL.println("Rejected settings submission: missing/oversized fields");
+          client.println("HTTP/1.1 400 Bad Request");
+          client.println("Content-Type: text/html");
+          client.println("Connection: close");
+          client.println();
+          client.print("<html><body><h2>Invalid form submission</h2>"
+                       "<p>SSID is required; field lengths must be reasonable.</p>"
+                       "<p><a href=\"/\">Back</a></p></body></html>");
+          // Do not set is_submitted; loop again for another attempt.
+          break;
+        }
+
         // Save to flash
         preferences.begin("settings", false); // read/write
         preferences.putString("ssid", ssid);
@@ -112,17 +153,20 @@ bool handleAPClientRequest(WiFiClient &client) {
         preferences.putString("startupType", startupType);
         preferences.end();
 
-        // Send a confirmation page
+        // Send a confirmation page — htmlEscape every interpolated
+        // user-supplied value so a hostile SSID/token can't inject
+        // markup or scripts into the page rendered to the
+        // configuring user's browser.
         String confirmation = "<html><head><style>\n";
         confirmation += "body { font-family: Arial, sans-serif; background-color: #5c5d5e; color: #ec8703; text-align: center; padding: 20px; }\n";
         confirmation += "button { background-color: #ec8703; color: white; border: none; padding: 15px; font-size: 16px; border-radius: 5px; cursor: not-allowed; }\n";
         confirmation += "</style></head><body>";
         confirmation += "<h2>Settings Submitted!</h2>";
-        confirmation += "<p>SSID: " + ssid + "</p>";
-        confirmation += "<p>Password: " + password + "</p>";
-        confirmation += "<p>Token: " + token + "</p>";
-        confirmation += "<p>Game Mode: " + urlDecode(gameMode) + "</p>";
-        confirmation += "<p>Startup Type: " + startupType + "</p>";
+        confirmation += "<p>SSID: " + htmlEscape(ssid) + "</p>";
+        confirmation += "<p>Password: " + htmlEscape(password) + "</p>";
+        confirmation += "<p>Token: " + htmlEscape(token) + "</p>";
+        confirmation += "<p>Game Mode: " + htmlEscape(urlDecode(gameMode)) + "</p>";
+        confirmation += "<p>Startup Type: " + htmlEscape(startupType) + "</p>";
         confirmation += "<p>Restarting the device... Please wait.</p>";
         confirmation += "<button disabled>Restarting...</button>";
         confirmation += "</body></html>";
@@ -151,8 +195,10 @@ void run_APsettings(void){
       DEBUG_SERIAL.println("\nClient handling...");
     }
   }
-  delay(2000);
+  // Tear down the AP cleanly so the broadcast SSID stops immediately
+  // rather than continuing to beacon for the ~2s delay before reboot.
+  WiFi.softAPdisconnect(true);
+  delay(500);
   DEBUG_SERIAL.println("\nRestarting");
-  ESP.restart(); 
-
+  ESP.restart();
 }
