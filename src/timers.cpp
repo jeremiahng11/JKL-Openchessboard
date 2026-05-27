@@ -12,10 +12,25 @@ void IRAM_ATTR onTimer() {
 void gameTimerHandler() {
   DEBUG_SERIAL.println(".");
 
-  if (WiFi.status() != WL_CONNECTED){
-    DEBUG_SERIAL.println("lost connection...restarting...");
-    ESP.restart();
+  // WiFi blips are common on 2.4GHz; don't reboot on the first hint
+  // of trouble. Try a graceful WiFi.reconnect() and only restart if
+  // we still can't reach the AP after a sustained outage. The 10s
+  // window covers typical brief router glitches without losing the
+  // in-progress game.
+  static unsigned long wifiFirstLostMs = 0;
+  if (WiFi.status() != WL_CONNECTED) {
+    if (wifiFirstLostMs == 0) {
+      wifiFirstLostMs = millis();
+      DEBUG_SERIAL.println("WiFi connection lost; attempting reconnect...");
+      WiFi.reconnect();
+    } else if (millis() - wifiFirstLostMs > 10000) {
+      DEBUG_SERIAL.println("WiFi still down after 10s; restarting...");
+      ESP.restart();
+    }
+    return;
   }
+  // Reconnected (or never disconnected): clear the outage timer.
+  wifiFirstLostMs = 0;
 
   if (!StreamClient.available()){
     return;

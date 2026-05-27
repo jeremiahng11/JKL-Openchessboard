@@ -13,15 +13,30 @@ void wifi_setup(void){
   WiFi.begin(wifi_ssid, wifi_password);
 
   DEBUG_SERIAL.print("Connecting to Wifi");
+  // Bound the connect attempt. Previously this loop ran forever on
+  // bad credentials or out-of-range AP — the board would blink a4
+  // indefinitely with no escape but a power cycle. After ~30s give
+  // up and reboot so the user gets a chance to enter settings mode
+  // at the next boot to fix credentials.
+  const unsigned long connectStartMs = millis();
+  const unsigned long connectTimeoutMs = 30000;
   while (WiFi.status() != WL_CONNECTED) {
       delay(300);
       DEBUG_SERIAL.print(".");
       displayConnectWait();
+      if (millis() - connectStartMs > connectTimeoutMs) {
+        DEBUG_SERIAL.println("");
+        DEBUG_SERIAL.print("WiFi connect timed out after ");
+        DEBUG_SERIAL.print(connectTimeoutMs / 1000);
+        DEBUG_SERIAL.println("s; rebooting so settings-mode can be chosen on next boot");
+        delay(500);
+        ESP.restart();
+      }
   }
   DEBUG_SERIAL.println("");
-  
+
   printWiFiStatus();
-  }
+}
 
 /* ---------------------------------------
  *  function to print wifi status.

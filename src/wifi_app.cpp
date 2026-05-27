@@ -33,7 +33,6 @@ String oppLastMove = "xy";
 String latestMove = "zz";
 String myMove = "yy";
 String moves = "";
-bool is_castling_allowed = true;
 
 
 void run_WiFi_app(void){
@@ -290,6 +289,11 @@ void run_WiFi_app(void){
             myLastMove = boardMove;
             myturn = false;
             consecutiveRejects = 0;
+            // If the accepted move was a castling king move, the
+            // physical rook still needs to be moved by the user.
+            // checkCastling lights up the rook's expected squares
+            // and waits for the matching motion before returning.
+            checkCastling(boardMove);
             break;
           }
           else{
@@ -303,6 +307,7 @@ void run_WiFi_app(void){
               myLastMove = boardMove;
               myturn = false;
               consecutiveRejects = 0;
+              checkCastling(boardMove);
               break;
             }
             consecutiveRejects++;
@@ -322,35 +327,34 @@ void run_WiFi_app(void){
       }
     }
     
+    // Unified post-game cleanup: never reboot the ESP. Whether the
+    // game ended naturally (mate/resign/timeout/draw via stream) or
+    // because of a mid-game restart gesture, we close only the
+    // stream client, reset per-game state, and continue the outer
+    // WiFi loop. PostClient and WiFi stay up, so the next game can
+    // be posted within a couple of seconds instead of after a full
+    // boot sequence (mode-select window + WiFi reconnect +
+    // firmware-version check).
     if (restartedMidGame) {
-      // Mid-game restart: skip the post-game flicker animation, keep
-      // WiFi + PostClient up, just close the stream and reset
-      // per-game state, then continue the outer WiFi loop. The
-      // find-game block at the top will see no game on Lichess and
-      // (since the board is typically in start position by this
-      // point) take the fast-path direct post above.
       DEBUG_SERIAL.println("game ended (mid-game restart); starting next game without reboot");
-      clearDisplay();
-      disableClient(StreamClient);
-      myLastMove = "xx";
-      oppLastMove = "xy";
-      latestMove = "zz";
-      moves = "";
-      myturn = false;
-      ever_left_start_pos = false;
-      kings_off_since_ms = 0;
-      start_pos_since_ms = 0;
-      continue;
+    } else {
+      DEBUG_SERIAL.println("game ended (natural end / opponent action); starting next game without reboot");
+      // Brief flicker as a "game over" cue; lasts ~10ms.
+      byte frame[8];
+      flickeringAnimation(frame);
     }
-
-    byte frame[8];
-    flickeringAnimation(frame);
     clearDisplay();
-    DEBUG_SERIAL.println("game ended...");
     disableClient(StreamClient);
-    disableClient(PostClient);
-    WiFi.disconnect(true,true);
-    ESP.restart();
+    myLastMove = "xx";
+    oppLastMove = "xy";
+    latestMove = "zz";
+    moves = "";
+    myturn = false;
+    ever_left_start_pos = false;
+    kings_off_since_ms = 0;
+    start_pos_since_ms = 0;
+    restart_requested = false; // belt-and-braces clear for next game
+    continue;
   }
 }
 

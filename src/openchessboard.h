@@ -44,7 +44,6 @@ extern String oppLastMove;
 extern String latestMove;
 extern String myMove;
 extern String moves; 
-extern bool is_castling_allowed;
 
 // LED and state variables
 extern bool update_flipstate;
