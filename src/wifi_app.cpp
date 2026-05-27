@@ -44,7 +44,13 @@ void run_WiFi_app(void){
   PostClient.setInsecure();
   StreamClient.setInsecure();
   DEBUG_SERIAL.println("\nStarting connection to server...");
- 
+
+  // Persists across outer-while iterations so the post-game cleanup
+  // can direct-post a new game (mid-game restart case) and signal
+  // the next iteration's getGameID/override-resume that the found
+  // game is OUR new game, not a stale ongoing one to resign.
+  bool wePostedNewGame = false;
+
   while (WiFi.status() == WL_CONNECTED){
     DEBUG_SERIAL.println("\nConnected to Server...");
     DEBUG_SERIAL.println("Find ongoing game");
@@ -55,13 +61,6 @@ void run_WiFi_app(void){
     // lit indefinitely while the board polled for ongoing games.
     is_connecting = false;
     clearDisplay();
-
-    // Tracks whether we just posted a new game ourselves. The override
-    // below would otherwise immediately resign it (pieces are in start
-    // position because the user just placed them to trigger the new game)
-    // and we'd ping-pong: post -> getGameID finds it -> override resigns
-    // it -> post again -> ... forever.
-    bool wePostedNewGame = false;
 
     while(!is_game_running){
       getGameID(PostClient);
@@ -375,6 +374,23 @@ void run_WiFi_app(void){
     kings_off_since_ms = 0;
     start_pos_since_ms = 0;
     restart_requested = false; // belt-and-braces clear for next game
+
+    // For the mid-game restart case the user has already signalled
+    // intent (gesture) — directly post a new game with the preferred
+    // settings here instead of falling back through the outer "Find
+    // ongoing game" loop. Set wePostedNewGame so the next outer
+    // iteration's override-resume check doesn't re-resign our just-
+    // posted game. For natural game-ends we leave the find-game flow
+    // alone — the user may want to change settings before the next
+    // game, so we wait for them to gesture for a new game.
+    if (restartedMidGame && board_gameMode != "None") {
+      DEBUG_SERIAL.println("\nDirect-posting new game with preferred settings: " + board_gameMode);
+      if (postNewGame(PostClient, board_gameMode)) {
+        wePostedNewGame = true;
+      } else {
+        DEBUG_SERIAL.println("Direct-post after restart failed; outer loop will retry");
+      }
+    }
     continue;
   }
 }

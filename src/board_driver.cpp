@@ -214,15 +214,16 @@ String getMoveInput(void) {
 
       readHall(hallBoardState1);
 
-      // Mid-game restart trigger: both kings (e1 = byte 4 bit 7,
-      // e8 = byte 4 bit 0) off the board continuously for >=5s.
-      // Uses the global kings_off_since_ms so the accumulator survives
-      // across getMoveInput() invocations.
-      //
-      // While the accumulator is running, SKIP move-motion detection
-      // for this poll. Otherwise lifting the first king fires
-      // mvStarted=true (motion at e1), exits wait-for-start, and the
-      // trigger never gets a chance to accumulate.
+      // Mid-game restart triggers (both kings off / pieces back in
+      // start position) only have a firmware-side consumer in WiFi
+      // mode — the WiFi outer loop checks restart_requested, resigns
+      // via the Lichess API, and posts a new game. In BLE mode the
+      // peripheral has no equivalent action (no central-side API to
+      // call from the firmware; the Flutter app handles the gesture
+      // by watching sync/unsync FENs). Skipping the trigger logic in
+      // BLE mode prevents the "requesting restart" log from firing
+      // when there's no consumer for restart_requested.
+      const bool wifiMode = (board_startupType == "WiFi");
       {
         static byte lastByte4ws = 0xFF;
         if (hallBoardState1[4] != lastByte4ws) {
@@ -238,7 +239,7 @@ String getMoveInput(void) {
       }
       const bool e1Empty = bitRead(hallBoardState1[4], 7) == 0;
       const bool e8Empty = bitRead(hallBoardState1[4], 0) == 0;
-      if (e1Empty && e8Empty) {
+      if (wifiMode && e1Empty && e8Empty) {
         if (kings_off_since_ms == 0) {
           kings_off_since_ms = millis();
           DEBUG_SERIAL.println("getMoveInput[wait-start]: both kings off, accumulating 5s...");
@@ -262,7 +263,8 @@ String getMoveInput(void) {
       // starting position for >=5s, gated by ever_left_start_pos so a
       // brand-new game doesn't immediately resign itself. Starting
       // layout = every byte 0xC3 (pieces on ranks 1, 2, 7, 8).
-      {
+      // Only consumed in WiFi mode (see wifiMode comment above).
+      if (wifiMode) {
         bool inStartPos = true;
         for (int i = 0; i < 8; i++) {
           if (hallBoardState1[i] != 0xC3) { inStartPos = false; break; }
@@ -349,9 +351,11 @@ String getMoveInput(void) {
           lastByte4 = hallBoardState3[4];
         }
       }
+      // WiFi-mode only (same reasoning as wait-for-start).
+      const bool wifiModeEnd = (board_startupType == "WiFi");
       const bool e1Empty_e = bitRead(hallBoardState3[4], 7) == 0;
       const bool e8Empty_e = bitRead(hallBoardState3[4], 0) == 0;
-      if (e1Empty_e && e8Empty_e) {
+      if (wifiModeEnd && e1Empty_e && e8Empty_e) {
         if (kings_off_since_ms == 0) {
           kings_off_since_ms = millis();
           DEBUG_SERIAL.println("getMoveInput[wait-end]: both kings off, accumulating 5s...");
@@ -372,7 +376,8 @@ String getMoveInput(void) {
 
       // Mid-game restart trigger #2 in wait-for-end too. Same logic as
       // wait-for-start; uses hallBoardState3 (the most recent read).
-      {
+      // WiFi-mode only.
+      if (wifiModeEnd) {
         bool inStartPos = true;
         for (int i = 0; i < 8; i++) {
           if (hallBoardState3[i] != 0xC3) { inStartPos = false; break; }
