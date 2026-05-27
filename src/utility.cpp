@@ -178,18 +178,22 @@ void readBoardSelection(){
   const uint8_t modeBit = 0;
   const char* modeNames[3] = {"WiFi", "BLE", "AP"};
 
-  // Hint LEDs marking a1, b1, c1 so the user sees which piece to lift.
+  // Hint LEDs marking a1, b1, c1 so the user sees which piece to lift
+  // (or place) to select a mode.
   byte hintLeds[8] = {0};
   hintLeds[7] = 0x01;
   hintLeds[6] = 0x01;
   hintLeds[5] = 0x01;
   displayArray(hintLeds);
 
+  // Brief settling delay so the hall sensors have time to stabilise after
+  // boot before we capture the baseline. Without this, the initial read
+  // can be noisy on cold-boot and a transition is "missed" because the
+  // baseline was already wrong.
+  delay(500);
+
   // Snapshot initial state so we can detect *transitions* on the three
-  // squares rather than requiring an exact full-board pattern. The
-  // previous exact-match approach silently failed any time even one
-  // other piece on the board was misplaced — so c1-removal wouldn't
-  // register unless every other square was also set up perfectly.
+  // squares rather than requiring an exact full-board pattern.
   byte hallInitial[8];
   readHall(hallInitial);
 
@@ -205,12 +209,13 @@ void readBoardSelection(){
   while (millis() - startMs < selectionWindowMs) {
     readHall(hallCurrent);
 
-    // Mode A/B/C: any of the three target squares transitioned from
-    // "piece present" to "piece lifted".
+    // Mode A/B/C: any of the three target squares' hall sensor changed
+    // state in either direction (piece lifted OR placed). Whichever
+    // square the user touches first wins.
     for (int i = 0; i < 3; i++) {
       const bool wasPresent = bitRead(hallInitial[modeRows[i]], modeBit) != 0;
       const bool nowPresent = bitRead(hallCurrent[modeRows[i]], modeBit) != 0;
-      if (wasPresent && !nowPresent) {
+      if (wasPresent != nowPresent) {
         board_startupType = modeNames[i];
         matched = true;
         break;
