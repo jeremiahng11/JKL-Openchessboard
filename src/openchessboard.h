@@ -71,6 +71,12 @@ extern bool restart_requested;
 // getMoveInput.
 extern unsigned long kings_off_since_ms;
 
+// Parallel timer for the 'pieces back in start position' restart
+// trigger. Same reasoning as kings_off_since_ms — needs to persist
+// across getMoveInput calls so a sequence of rejected moves doesn't
+// keep restarting the accumulator.
+extern unsigned long start_pos_since_ms;
+
 // True once the in-game piece layout has been observed to differ from
 // the standard starting position. Gates the "all pieces back in start"
 // restart trigger so a brand-new game (pieces already in start

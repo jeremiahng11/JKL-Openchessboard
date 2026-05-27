@@ -258,6 +258,39 @@ String getMoveInput(void) {
         kings_off_since_ms = 0;
       }
 
+      // Mid-game restart trigger #2: all pieces back in the standard
+      // starting position for >=5s, gated by ever_left_start_pos so a
+      // brand-new game doesn't immediately resign itself. Starting
+      // layout = every byte 0xC3 (pieces on ranks 1, 2, 7, 8).
+      {
+        bool inStartPos = true;
+        for (int i = 0; i < 8; i++) {
+          if (hallBoardState1[i] != 0xC3) { inStartPos = false; break; }
+        }
+        if (!inStartPos) {
+          if (start_pos_since_ms != 0) {
+            DEBUG_SERIAL.println("getMoveInput[wait-start]: pieces moved, resetting start-pos timer");
+            start_pos_since_ms = 0;
+          }
+          ever_left_start_pos = true;
+        } else if (ever_left_start_pos) {
+          if (start_pos_since_ms == 0) {
+            start_pos_since_ms = millis();
+            DEBUG_SERIAL.println("getMoveInput[wait-start]: pieces back in start position, accumulating 5s...");
+          } else if (millis() - start_pos_since_ms >= 5000) {
+            DEBUG_SERIAL.println("getMoveInput[wait-start]: start-pos sustained >=5s, requesting restart");
+            restart_requested = true;
+            clearDisplay();
+            return "";
+          }
+          if (StreamClient.available() & board_startupType == "WiFi") {
+            moveStreamHandler();
+          }
+          delay(50);
+          continue; // skip motion detection while accumulating
+        }
+      }
+
       for (int row_index = 0; row_index < 8; row_index++) {
         for (int col_index = 0; col_index < 8; col_index++) {
 
@@ -335,6 +368,36 @@ String getMoveInput(void) {
       } else if (kings_off_since_ms != 0) {
         DEBUG_SERIAL.println("getMoveInput[wait-end]: king replaced, resetting timer");
         kings_off_since_ms = 0;
+      }
+
+      // Mid-game restart trigger #2 in wait-for-end too. Same logic as
+      // wait-for-start; uses hallBoardState3 (the most recent read).
+      {
+        bool inStartPos = true;
+        for (int i = 0; i < 8; i++) {
+          if (hallBoardState3[i] != 0xC3) { inStartPos = false; break; }
+        }
+        if (!inStartPos) {
+          if (start_pos_since_ms != 0) {
+            DEBUG_SERIAL.println("getMoveInput[wait-end]: pieces moved, resetting start-pos timer");
+            start_pos_since_ms = 0;
+          }
+          ever_left_start_pos = true;
+        } else if (ever_left_start_pos) {
+          if (start_pos_since_ms == 0) {
+            start_pos_since_ms = millis();
+            DEBUG_SERIAL.println("getMoveInput[wait-end]: pieces back in start position, accumulating 5s...");
+          } else if (millis() - start_pos_since_ms >= 5000) {
+            DEBUG_SERIAL.println("getMoveInput[wait-end]: start-pos sustained >=5s, requesting restart");
+            restart_requested = true;
+            clearDisplay();
+            return "";
+          }
+          if (StreamClient.available() & board_startupType == "WiFi") {
+            moveStreamHandler();
+          }
+          continue; // skip move-end detection while accumulating
+        }
       }
 
       for (int row_index = 0; row_index < 8; row_index++) {
