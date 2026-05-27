@@ -10,6 +10,7 @@ bool is_connecting = false;
 bool is_game_running = false;
 bool is_seeking = false;
 bool dimLEDs  = false;
+bool restart_requested = false;
 
 // WiFi, and timer variables
 String wifi_ssid;
@@ -104,16 +105,57 @@ void run_WiFi_app(void){
     timerFlag = true;
     String boardMove;
 
+    // Tracks both-kings-off start time at the in-game-loop scope, so the
+    // restart trigger also fires during the OPPONENT's turn (when control
+    // is here instead of inside getMoveInput).
+    unsigned long opponentTurnKingsOffSinceMs = 0;
+
     while (is_game_running | is_seeking)
-    {   
+    {
+      // If getMoveInput requested a mid-game restart, resign here and
+      // break out so the outer loop starts a new game.
+      if (restart_requested) {
+        DEBUG_SERIAL.print("Mid-game restart requested, resigning ");
+        DEBUG_SERIAL.println(currentGameID);
+        resignGame(PostClient, currentGameID);
+        is_game_running = false;
+        is_seeking = false;
+        restart_requested = false;
+        currentGameID = "noGame";
+        delay(800);
+        break;
+      }
+
+      // Same trigger when control is here (opponent's turn — no
+      // getMoveInput running). Sample a single hall read per iteration.
+      {
+        byte hallNow[8];
+        readHall(hallNow);
+        const bool e1Empty = bitRead(hallNow[4], 7) == 0;
+        const bool e8Empty = bitRead(hallNow[4], 0) == 0;
+        if (e1Empty && e8Empty) {
+          if (opponentTurnKingsOffSinceMs == 0) {
+            opponentTurnKingsOffSinceMs = millis();
+          } else if (millis() - opponentTurnKingsOffSinceMs >= 5000) {
+            DEBUG_SERIAL.println("in-game loop: both kings off >=5s, requesting restart");
+            restart_requested = true;
+            opponentTurnKingsOffSinceMs = 0;
+            continue; // top of loop handles the resign + break
+          }
+        } else if (opponentTurnKingsOffSinceMs != 0) {
+          opponentTurnKingsOffSinceMs = 0;
+        }
+      }
+
       moveStreamHandler();
 
-      if (myturn & latestMove == oppLastMove){ 
+      if (myturn & latestMove == oppLastMove){
         DEBUG_SERIAL.println("Wait for accept move input...");
         while (boardMove != latestMove){
           displayMove(latestMove);
 
           boardMove = getMoveInput();
+          if (restart_requested) break;
           String swapped_move = boardMove.substring(2, 4) + boardMove.substring(0, 2);
           if(boardMove.substring(0, 2) == boardMove.substring(2, 4) | swapped_move == latestMove){
             boardMove = latestMove;
@@ -129,13 +171,14 @@ void run_WiFi_app(void){
           }
         }
 
-      } 
+      }
 
       if (myturn){
         DEBUG_SERIAL.println("Wait for board move input...");
-        bool moveSuccess = false; 
+        bool moveSuccess = false;
         while(is_game_running){ // wait for sucessful move transmission to get to opponents turn
           boardMove = getMoveInput();
+          if (restart_requested) break;
           DEBUG_SERIAL.print("move played on board: ");
           DEBUG_SERIAL.println(boardMove);
           DEBUG_SERIAL.println("try to send move...");

@@ -55,6 +55,12 @@ extern bool is_game_running;
 extern bool is_seeking;
 extern bool dimLEDs;
 
+// True when the user has signalled a mid-game restart (both kings off
+// the board for the configured sustained duration). Game loops in
+// wifi_app / ble_app should check this between moves and, if set,
+// resign the current game and start a fresh one.
+extern bool restart_requested;
+
 // Settings object
 extern Preferences preferences;
 
