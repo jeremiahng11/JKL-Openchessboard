@@ -55,6 +55,13 @@ void run_WiFi_app(void){
     is_connecting = false;
     clearDisplay();
 
+    // Tracks whether we just posted a new game ourselves. The override
+    // below would otherwise immediately resign it (pieces are in start
+    // position because the user just placed them to trigger the new game)
+    // and we'd ping-pong: post -> getGameID finds it -> override resigns
+    // it -> post again -> ... forever.
+    bool wePostedNewGame = false;
+
     while(!is_game_running){
       getGameID(PostClient);
 
@@ -62,7 +69,15 @@ void run_WiFi_app(void){
       // the starting position on the physical board, they're signalling
       // 'I want a new game, not to resume this one'. Resign the found
       // game and loop back so the new-game flow takes over.
-      if (is_game_running && board_gameMode != "None" && isStartingPosition()) {
+      //
+      // SKIP this check on the iteration immediately after our own
+      // postNewGame — the game we just created always satisfies the
+      // condition (pieces are in start, board found a game) but we
+      // want to play it, not resign it.
+      if (wePostedNewGame) {
+        wePostedNewGame = false;
+        DEBUG_SERIAL.println("Skipping override-resume: this is the game we just posted");
+      } else if (is_game_running && board_gameMode != "None" && isStartingPosition()) {
         DEBUG_SERIAL.print("Override resume: board in start position, resigning ");
         DEBUG_SERIAL.println(currentGameID);
         resignGame(PostClient, currentGameID);
@@ -97,6 +112,9 @@ void run_WiFi_app(void){
         // the trigger only fires after pieces have actually moved.
         ever_left_start_pos = false;
         restart_requested = false;
+        // Suppress the override on the next iteration so getGameID
+        // finding *our* newly-created game doesn't immediately resign it.
+        wePostedNewGame = true;
       } else if (!is_game_running && !is_seeking) {
         // gameMode is "None" (or we're between polls): show the
         // center-squares 'searching for game' animation from the README
