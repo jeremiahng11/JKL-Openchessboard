@@ -119,7 +119,7 @@ void getGameID(WiFiClientSecure  &client){
     client.print("Authorization: Bearer ");
     client.println(lichess_api_token);
     client.println("Connection: close");
-    client.println("\n"); 
+    client.println("\n");
 
     char* char_response = catchResponseFromClient(client);
     //DEBUG_SERIAL.print(char_response);
@@ -127,20 +127,32 @@ void getGameID(WiFiClientSecure  &client){
     JsonDocument doc;
 
     if (parseJsonResponse(char_response, doc)) {
-        currentGameID = doc["nowPlaying"][0]["gameId"].as<String>();   
+        currentGameID = doc["nowPlaying"][0]["gameId"].as<String>();
     }
 
-    if (currentGameID.length() == 8){  
+    if (currentGameID.length() == 8){
         DEBUG_SERIAL.print("current game id: ");
         DEBUG_SERIAL.println(currentGameID);
 
+        // Reset per-game move state to defaults BEFORE parsing the
+        // response. The lastMove field below only fires the assignment
+        // blocks when length == 4; for a brand-new game with no moves
+        // played the field is empty and the previous game's stale move
+        // strings would otherwise leak into the in-game loop —
+        // triggering a phantom 'Wait for accept move input' for an AI
+        // move that doesn't exist.
+        myLastMove = "xx";
+        oppLastMove = "xy";
+        latestMove = "zz";
+        moves = "";
+
+        // Assign myturn directly (not 'if (isMyTurn) myturn = true').
+        // Previously the one-way assignment could leave myturn=true
+        // from a prior game even when the new game's isMyTurn is false.
         bool myturn_temp  = doc["nowPlaying"][0]["isMyTurn"].as<bool>();
         DEBUG_SERIAL.print("my Turn: ");
         DEBUG_SERIAL.println(myturn_temp);
-
-        if(myturn_temp){
-            myturn = true;
-        }
+        myturn = myturn_temp;
 
         String lastMove_temp  = doc["nowPlaying"][0]["lastMove"].as<String>();
         DEBUG_SERIAL.print("last move: ");
@@ -151,7 +163,7 @@ void getGameID(WiFiClientSecure  &client){
             latestMove = lastMove_temp;
             moves = lastMove_temp; // complete  board history not yet available
         }
-        if(lastMove_temp.length() == 4  & !myturn){ // last move was played by player and wait for opponent move 
+        if(lastMove_temp.length() == 4  & !myturn){ // last move was played by player and wait for opponent move
             myLastMove = lastMove_temp;
             latestMove = lastMove_temp;
             moves = lastMove_temp; // complete  board history not yet available
