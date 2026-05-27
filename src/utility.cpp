@@ -168,18 +168,23 @@ bool isStartingPosition(void){
 }
 
 void readBoardSelection(){
-  // Hall-sensor coordinates for the three mode-select squares. The hall
-  // array is column-major (row index = chess column h..a, bit index = chess
-  // rank 1..8), so:
-  //   a1 → hallBoardState[7] bit 0
-  //   b1 → hallBoardState[6] bit 0
-  //   c1 → hallBoardState[5] bit 0
-  const uint8_t modeRows[3] = {7, 6, 5};
-  const uint8_t modeBit = 0;
+  // Hall-sensor coordinates for the three mode-select squares, empirically
+  // determined from real boards: a piece lifted from chess square c1
+  // changes hallBoardState[2] bit 7. By the same pattern:
+  //   a1 → hallBoardState[0] bit 7
+  //   b1 → hallBoardState[1] bit 7
+  //   c1 → hallBoardState[2] bit 7
+  // (The createFen() pipeline applies rotate90CCW + rotate180 to bring
+  // these raw coordinates into FEN orientation, which is why an exact
+  // empty / starting-position pattern like 0xC3 fits across all bytes.)
+  const uint8_t modeBytes[3] = {0, 1, 2};
+  const uint8_t modeBit = 7;
   const char* modeNames[3] = {"WiFi", "BLE", "AP"};
 
   // Hint LEDs marking a1, b1, c1 so the user sees which piece to lift
-  // (or place) to select a mode.
+  // (or place) to select a mode. LED address space is independent of the
+  // hall-sensor address space, so the LED bytes/bits stay as they were —
+  // it's only the *hall* mapping that was wrong.
   byte hintLeds[8] = {0};
   hintLeds[7] = 0x01;
   hintLeds[6] = 0x01;
@@ -213,8 +218,8 @@ void readBoardSelection(){
     // state in either direction (piece lifted OR placed). Whichever
     // square the user touches first wins.
     for (int i = 0; i < 3; i++) {
-      const bool wasPresent = bitRead(hallInitial[modeRows[i]], modeBit) != 0;
-      const bool nowPresent = bitRead(hallCurrent[modeRows[i]], modeBit) != 0;
+      const bool wasPresent = bitRead(hallInitial[modeBytes[i]], modeBit) != 0;
+      const bool nowPresent = bitRead(hallCurrent[modeBytes[i]], modeBit) != 0;
       if (wasPresent != nowPresent) {
         board_startupType = modeNames[i];
         matched = true;
