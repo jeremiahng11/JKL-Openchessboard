@@ -8,5 +8,6 @@ extern void setStateUpdating(void);
 extern void setStatePlaying(void);
 extern String urlDecode(const String &encoded);
 extern bool isStartingPosition(void);
+extern bool waitForNewGameTrigger(unsigned long bothKingsRemovedMs);
 extern void readSettings(void);
 extern void readBoardSelection(void);

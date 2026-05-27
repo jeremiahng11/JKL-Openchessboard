@@ -147,6 +147,64 @@ void readSettings(void){
   preferences.end();
 }
 
+/* ---------------------------------------
+ *  Blocks until the user signals "start a new game" via either of:
+ *    1. All pieces placed in the chess starting position.
+ *    2. Both kings (e1 and e8) removed from the board continuously for
+ *       at least [bothKingsRemovedMs] milliseconds.
+ *
+ *  Returns true once a trigger fires (always — there is no timeout in
+ *  this version; the WiFi app stays in this wait until the user acts).
+ *
+ *  King hall coordinates (raw, pre-rotation; derived empirically from
+ *  the mode-select diagnostic logs):
+ *    e1 → hallBoardState[4] bit 7
+ *    e8 → hallBoardState[4] bit 0
+ *
+ *  isStartingPosition() updates the LED display each call with the diff
+ *  vs the starting layout, so the user gets visual feedback either way.
+ *  @return bool always true
+*/
+bool waitForNewGameTrigger(unsigned long bothKingsRemovedMs) {
+  unsigned long kingsOffSinceMs = 0;
+  bool warnedKingsOff = false;
+  byte hall[8];
+
+  while (true) {
+    // Trigger 1: full starting position. This call also updates the
+    // LED display so the user sees which squares are wrong.
+    if (isStartingPosition()) {
+      DEBUG_SERIAL.println("Trigger: starting position detected");
+      return true;
+    }
+
+    // Trigger 2: both kings off for sustained duration.
+    readHall(hall);
+    const bool e1Empty = bitRead(hall[4], 7) == 0;
+    const bool e8Empty = bitRead(hall[4], 0) == 0;
+    if (e1Empty && e8Empty) {
+      if (kingsOffSinceMs == 0) {
+        kingsOffSinceMs = millis();
+        warnedKingsOff = false;
+      } else if (!warnedKingsOff) {
+        DEBUG_SERIAL.print("Both kings off; waiting ");
+        DEBUG_SERIAL.print(bothKingsRemovedMs);
+        DEBUG_SERIAL.println("ms for sustained trigger...");
+        warnedKingsOff = true;
+      } else if (millis() - kingsOffSinceMs >= bothKingsRemovedMs) {
+        DEBUG_SERIAL.println("Trigger: both kings off for required duration");
+        return true;
+      }
+    } else if (kingsOffSinceMs != 0) {
+      DEBUG_SERIAL.println("King replaced; resetting both-kings-off timer");
+      kingsOffSinceMs = 0;
+      warnedKingsOff = false;
+    }
+
+    delay(100);
+  }
+}
+
 bool isStartingPosition(void){
   byte read_hall_array[8];
   byte diff_pattern[8];

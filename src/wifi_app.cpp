@@ -58,10 +58,8 @@ void run_WiFi_app(void){
 
       //Start new game if no game is running and seek not already started
       if (board_gameMode != "None"  && !is_seeking &&  !is_game_running){
-        DEBUG_SERIAL.println("\nWait for Starting Position");
-        while(!isStartingPosition()){
-          delay(100);
-        }
+        DEBUG_SERIAL.println("\nWait for new-game trigger (start position OR both kings off 5s)");
+        waitForNewGameTrigger(5000);
 
         DEBUG_SERIAL.println("\nStart Game with prefered settings: "+ board_gameMode);
         postNewGame(PostClient,  board_gameMode);
